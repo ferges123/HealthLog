@@ -49,6 +49,16 @@ import type {
 const PROFILE_ROOT_ENV = "ANTIGRAVITY_PROFILE_ROOT";
 const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
+/** Image MIME types accepted by ACP `image` blocks. */
+const ALLOWED_IMAGE_MIMES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+
+/** Document MIME types accepted by ACP `resource` blocks. */
+const ALLOWED_DOCUMENT_MIMES = new Set(["application/pdf"]);
+
 /** Environment variables passed to the child. Everything else is dropped. */
 const CHILD_ENV_ALLOWLIST = [
   "PATH",
@@ -297,12 +307,24 @@ function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
     if (typeof message.content === "string") continue;
     for (const part of message.content) {
       if (part.type === "image") {
+        if (!ALLOWED_IMAGE_MIMES.has(part.mediaType)) {
+          throw new AntigravityError(
+            `Unsupported image MIME type: ${part.mediaType}`,
+            ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+          );
+        }
         blocks.push({
           type: "image",
           mimeType: part.mediaType,
           data: part.dataBase64,
         });
       } else if (part.type === "document") {
+        if (!ALLOWED_DOCUMENT_MIMES.has(part.mediaType)) {
+          throw new AntigravityError(
+            `Unsupported document MIME type: ${part.mediaType}`,
+            ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+          );
+        }
         documents += 1;
         blocks.push({
           type: "resource",

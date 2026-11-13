@@ -58,6 +58,9 @@ export function useAntigravityProfile() {
   const [busy, setBusy] = useState<Busy | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [steps, setSteps] = useState<string[] | null>(null);
+  const [stepsVariant, setStepsVariant] = useState<
+    "connect" | "disconnect" | null
+  >(null);
   const [models, setModels] = useState<AntigravityModelsResponse | null>(null);
 
   const connected = status?.connectionStatus === "connected";
@@ -124,6 +127,7 @@ export function useAntigravityProfile() {
       const result = await apiPost<AntigravityAuthenticateResponse>(
         "/api/antigravity/authenticate",
       );
+      setStepsVariant("connect");
       setSteps(result.instructions);
       await refresh();
     });
@@ -148,6 +152,7 @@ export function useAntigravityProfile() {
       const result = await apiPost<AntigravityDisconnectResponse>(
         "/api/antigravity/disconnect",
       );
+      setStepsVariant("disconnect");
       setSteps(result.instructions);
       await refresh();
     });
@@ -173,6 +178,7 @@ export function useAntigravityProfile() {
     busy,
     notice,
     steps,
+    stepsVariant,
     models,
     connected,
     closeSteps: () => setSteps(null),

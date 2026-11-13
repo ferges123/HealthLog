@@ -600,15 +600,11 @@ describe("AntigravityClient multimodal support", () => {
 
   describe("error handling", () => {
     it("rejects unsupported MIME types before process spawn", async () => {
-      // This test validates that we check mediaType early
-      // In practice, the mediaType validation happens upstream in the document processing
-      // The client itself doesn't enforce MIME types, it relies on ACP capabilities
       const mockProc = createMockProcess({
         promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
-      // ACP should reject unsupported types, not HealthLog
       const params: CompletionParams = {
         system: "Describe the attachments.",
         messages: [
@@ -626,9 +622,11 @@ describe("AntigravityClient multimodal support", () => {
         ],
       };
 
-      // Should succeed at HealthLog level (ACP handles validation)
-      const result = await client.generateCompletion(params);
-      expect(result.providerType).toBe("antigravity");
+      await expect(client.generateCompletion(params)).rejects.toThrow(
+        "Unsupported image MIME type: image/bmp",
+      );
+      // The process must not have been spawned.
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
   });
 });

@@ -6567,6 +6567,7 @@
         "modelDescription": "Die Modelle stammen von der Antigravity CLI für Ihr Profil. Standard ist das Modell, das die CLI wählt.",
         "modelUnavailable": "Das gespeicherte Modell wird von der CLI für dieses Profil nicht angeboten. Wählen Sie ein anderes Modell.",
         "noModels": "Die CLI hat für dieses Profil keine Modelle gemeldet. Führen Sie den Verbindungstest erneut aus.",
+        "stepsDisconnectTitle": "Antigravity getrennt",
         "disconnectTitle": "Antigravity trennen?",
         "disconnectBody": "HealthLog vergisst dieses Profil und das gewählte Modell. Die Anmeldung bleibt im Profilordner auf dem Server, bis ein Betreiber sie löscht.",
         "disconnectConfirm": "Trennen",

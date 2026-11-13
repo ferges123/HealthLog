@@ -6567,6 +6567,7 @@
         "modelDescription": "I modelli provengono dalla CLI di Antigravity per il tuo profilo. Il predefinito è il modello scelto dalla CLI.",
         "modelUnavailable": "La CLI non offre il modello salvato per questo profilo. Scegline un altro.",
         "noModels": "La CLI non ha restituito modelli per questo profilo. Ripeti il test di connessione.",
+        "stepsDisconnectTitle": "Antigravity disconnesso",
         "disconnectTitle": "Disconnettere Antigravity?",
         "disconnectBody": "HealthLog dimenticherà questo profilo e il modello scelto. L'accesso resta nella cartella del profilo sul server finché un amministratore non la elimina.",
         "disconnectConfirm": "Disconnetti",

@@ -35,8 +35,21 @@ import { reasonText, useAntigravityProfile } from "./use-antigravity-profile";
 export function AntigravityProviderForm() {
   const { t } = useTranslations();
   const profile = useAntigravityProfile();
-  const { status, loading, loadFailed, busy, notice, models, connected } =
-    profile;
+  const {
+    status,
+    loading,
+    loadFailed,
+    busy,
+    notice,
+    models,
+    connected,
+    stepsVariant,
+  } = profile;
+
+  const stepsTitle =
+    stepsVariant === "disconnect"
+      ? t("settings.ai.antigravity.stepsDisconnectTitle")
+      : t("settings.ai.antigravity.connectButton");
 
   if (loading) {
     return (
@@ -146,6 +159,7 @@ export function AntigravityProviderForm() {
 
       <AntigravityStepsDialog
         steps={profile.steps}
+        title={stepsTitle}
         onClose={profile.closeSteps}
       />
     </>

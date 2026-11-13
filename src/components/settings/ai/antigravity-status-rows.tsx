@@ -53,24 +53,26 @@ export function ConnectionStateRow({
   const { t } = useTranslations();
   const fmt = useFormatters();
 
-  const info = {
-    disconnected: {
-      label: t("settings.ai.antigravity.statusDisconnected"),
-      color: "text-muted-foreground",
-    },
-    connected: {
-      label: t("settings.ai.antigravity.statusConnected"),
-      color: "text-success",
-    },
-    auth_required: {
-      label: t("settings.ai.antigravity.statusAuthRequired"),
-      color: "text-warning",
-    },
-    error: {
-      label: t("settings.ai.antigravity.statusError"),
-      color: "text-destructive",
-    },
-  }[connection];
+  const info = (
+    {
+      disconnected: {
+        label: t("settings.ai.antigravity.statusDisconnected"),
+        color: "text-muted-foreground",
+      },
+      connected: {
+        label: t("settings.ai.antigravity.statusConnected"),
+        color: "text-success",
+      },
+      auth_required: {
+        label: t("settings.ai.antigravity.statusAuthRequired"),
+        color: "text-warning",
+      },
+      error: {
+        label: t("settings.ai.antigravity.statusError"),
+        color: "text-destructive",
+      },
+    } as Record<string, { label: string; color: string }>
+  )[connection] ?? { label: connection, color: "text-muted-foreground" };
 
   return (
     <div>

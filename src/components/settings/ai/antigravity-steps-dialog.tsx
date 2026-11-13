@@ -17,9 +17,11 @@ import { useTranslations } from "@/lib/i18n/context";
 
 export function AntigravityStepsDialog({
   steps,
+  title,
   onClose,
 }: {
   steps: string[] | null;
+  title: string;
   onClose: () => void;
 }) {
   const { t } = useTranslations();
@@ -33,9 +35,7 @@ export function AntigravityStepsDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            {t("settings.ai.antigravity.connectButton")}
-          </DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>
             {t("settings.ai.antigravity.description")}
           </DialogDescription>

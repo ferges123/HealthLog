@@ -6567,6 +6567,7 @@
         "modelDescription": "De modellen komen van de Antigravity-CLI voor je profiel. Standaard is het model dat de CLI kiest.",
         "modelUnavailable": "De CLI biedt het opgeslagen model niet aan voor dit profiel. Kies een ander model.",
         "noModels": "De CLI gaf geen modellen terug voor dit profiel. Voer de verbindingstest opnieuw uit.",
+        "stepsDisconnectTitle": "Antigravity losgekoppeld",
         "disconnectTitle": "Antigravity loskoppelen?",
         "disconnectBody": "HealthLog vergeet dit profiel en het gekozen model. De aanmelding blijft in de profielmap op de server tot een beheerder die verwijdert.",
         "disconnectConfirm": "Loskoppelen",

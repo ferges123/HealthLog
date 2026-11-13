@@ -6567,6 +6567,7 @@
         "modelDescription": "Modele pochodzą z CLI Antigravity dla Twojego profilu. Domyślny to model wybrany przez CLI.",
         "modelUnavailable": "Zapisanego modelu nie oferuje CLI dla tego profilu. Wybierz inny model.",
         "noModels": "CLI nie zwróciło żadnych modeli dla tego profilu. Uruchom ponownie test połączenia.",
+        "stepsDisconnectTitle": "Antigravity rozłączone",
         "disconnectTitle": "Rozłączyć Antigravity?",
         "disconnectBody": "HealthLog zapomni ten profil i wybrany model. Logowanie pozostanie w folderze profilu na serwerze, dopóki operator go nie usunie.",
         "disconnectConfirm": "Rozłącz",
