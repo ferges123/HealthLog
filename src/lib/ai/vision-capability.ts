@@ -78,6 +78,7 @@ export type VisionProviderType =
   | "openai-compatible"
   | "codex"
   | "admin-codex"
+  | "antigravity"
   | "none";
 
 /**
@@ -99,6 +100,10 @@ export type VisionProviderType =
  *                           multimodal model (GPT-5.x, gpt-6, gpt-4o-class). Image
  *                           input rides the ChatGPT plan — no API key. A
  *                           non-multimodal slug (or unknown) → false.
+ *  - antigravity          → conservative false until capability discovery
+ *                           confirms image support at runtime. ACP reports
+ *                           promptCapabilities.image, but we gate here until
+ *                           Stage 3 completes multimodal verification.
  *  - none                 → false (nothing configured).
  */
 export function supportsVisionForConfig(
@@ -120,6 +125,10 @@ export function supportsVisionForConfig(
     // a resolved Codex slug, so its vision capability is identical to `codex`.
     case "admin-codex":
       return model ? openAIFamilySupportsVision(model) : false;
+    case "antigravity":
+      // Conservative: false until runtime capability confirms
+      // TODO: Query from antigravityCapabilitiesJson after Stage 3
+      return false;
     case "none":
     default:
       return false;

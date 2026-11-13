@@ -1264,6 +1264,17 @@ async function resolveProviderForType(
       // per-user `useCentralCodex` opt-in. Returning null here keeps a
       // hand-crafted `admin-codex` chain entry from bypassing that gate.
       return null;
+    case "antigravity": {
+      // v1.48.0 — Antigravity CLI provider. Credentials are NOT stored in DB;
+      // the CLI uses its own auth. Configuration (model, profile) will come
+      // from User.antigravityModel and User.antigravityProfileId in Stage 4.
+      // For Stage 2, we return a basic client without customization.
+      const { AntigravityClient } = await import("./antigravity-client");
+      return new AntigravityClient({
+        model: null, // TODO: ctx.userRow?.antigravityModel
+        thoughtLevel: "medium",
+      });
+    }
     default:
       return null;
   }
