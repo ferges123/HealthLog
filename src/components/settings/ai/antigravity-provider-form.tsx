@@ -11,6 +11,7 @@
  */
 
 import { Loader2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { ConfirmButton } from "@/components/ui/confirm-button";
@@ -22,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useTranslations } from "@/lib/i18n/context";
+import { queryKeys } from "@/lib/query-keys/index";
 import { AntigravityModelPicker } from "./antigravity-model-picker";
 import { AntigravityStepsDialog } from "./antigravity-steps-dialog";
 import {
@@ -34,7 +36,17 @@ import { reasonText, useAntigravityProfile } from "./use-antigravity-profile";
 
 export function AntigravityProviderForm() {
   const { t } = useTranslations();
-  const profile = useAntigravityProfile();
+  const queryClient = useQueryClient();
+  const profile = useAntigravityProfile({
+    onProviderChanged: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.userAiProvider(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.insightsProviderChain(),
+      });
+    },
+  });
   const {
     status,
     loading,

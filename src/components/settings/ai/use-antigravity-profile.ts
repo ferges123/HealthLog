@@ -49,7 +49,9 @@ export function reasonText(
   }
 }
 
-export function useAntigravityProfile() {
+export function useAntigravityProfile(callbacks?: {
+  onProviderChanged?: () => void;
+}) {
   const { t } = useTranslations();
 
   const [status, setStatus] = useState<AntigravityStatusResponse | null>(null);
@@ -127,6 +129,8 @@ export function useAntigravityProfile() {
       const result = await apiPost<AntigravityAuthenticateResponse>(
         "/api/antigravity/authenticate",
       );
+      await apiPatch("/api/user/ai-provider", { provider: "ANTIGRAVITY_CLI" });
+      callbacks?.onProviderChanged?.();
       setStepsVariant("connect");
       setSteps(result.instructions);
       await refresh();
@@ -152,6 +156,8 @@ export function useAntigravityProfile() {
       const result = await apiPost<AntigravityDisconnectResponse>(
         "/api/antigravity/disconnect",
       );
+      await apiPatch("/api/user/ai-provider", { provider: null });
+      callbacks?.onProviderChanged?.();
       setStepsVariant("disconnect");
       setSteps(result.instructions);
       await refresh();
