@@ -456,10 +456,9 @@ export class AntigravityClient implements AIProvider {
     cancelled.catch(() => undefined);
 
     try {
-      return await Promise.race([
-        this.execute(workDir, blocks, params, onDelta, state),
-        cancelled,
-      ]);
+      const execution = this.execute(workDir, blocks, params, onDelta, state);
+      execution.catch(() => undefined);
+      return await Promise.race([execution, cancelled]);
     } finally {
       state.done = true;
       if (onAbort) signal?.removeEventListener("abort", onAbort);

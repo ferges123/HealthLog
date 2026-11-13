@@ -8,6 +8,7 @@
 import { apiHandler, requireAuth } from "@/lib/api-handler";
 import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
+import { Prisma } from "@/generated/prisma/client";
 import {
   antigravityProfileLocation,
   antigravityReasonOf,
@@ -65,10 +66,10 @@ export const POST = apiHandler(async () => {
     data: {
       antigravityConnectionStatus: result.status,
       antigravityConnectedAt:
-        result.status === "connected" ? new Date() : undefined,
+        result.status === "connected" ? new Date() : null,
       antigravityCapabilitiesJson: result.capabilities
         ? { promptCapabilities: result.capabilities }
-        : undefined,
+        : Prisma.DbNull,
     },
   });
 

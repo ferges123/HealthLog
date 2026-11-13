@@ -50,6 +50,11 @@ export function AntigravityModelPicker({
             <option value="">
               {t("settings.ai.antigravity.modelDefault")}
             </option>
+            {!savedModelIsOffered && selectedModel && (
+              <option value={selectedModel} disabled>
+                {selectedModel} ({t("common.unavailable")})
+              </option>
+            )}
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.name}

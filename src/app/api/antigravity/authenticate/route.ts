@@ -45,7 +45,10 @@ export const POST = apiHandler(async () => {
 
   const existing = await prisma.user.findUnique({
     where: { id: caller.id },
-    select: { antigravityProfileId: true },
+    select: { 
+      antigravityProfileId: true,
+      antigravityConnectionStatus: true,
+    },
   });
 
   const profileId = existing?.antigravityProfileId ?? generateProfileId();
@@ -70,8 +73,13 @@ export const POST = apiHandler(async () => {
     where: { id: caller.id },
     data: {
       antigravityProfileId: profileId,
-      antigravityConnectionStatus: "disconnected",
-      antigravityConnectedAt: null,
+      // Only reset status on new profile or if not already connected
+      ...(existing?.antigravityConnectionStatus !== "connected"
+        ? {
+            antigravityConnectionStatus: "disconnected",
+            antigravityConnectedAt: null,
+          }
+        : {}),
     },
   });
 

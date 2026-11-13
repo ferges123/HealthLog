@@ -1016,6 +1016,7 @@ const PRESENCE_USER_SELECT = {
   aiCompatModel: true,
   aiModel: true,
   antigravityProfileId: true,
+  antigravityConnectionStatus: true,
   codexConnectionStatus: true,
   codexAccessTokenEncrypted: true,
   codexRefreshTokenEncrypted: true,
@@ -1132,7 +1133,10 @@ export function probeProviderChain(
             // Credentials stay in the CLI's profile folder, never in the DB.
             // Without a profile for this user the CLI would run under the
             // server's shared login, so the provider stays off.
-            return antigravityAvailable(row.antigravityProfileId);
+            return (
+              row.antigravityConnectionStatus === "connected" &&
+              antigravityAvailable(row.antigravityProfileId)
+            );
           default:
             // `admin-codex` is never resolved from a stored chain entry.
             return false;

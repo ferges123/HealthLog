@@ -14,6 +14,7 @@ import { apiHandler, requireAuth } from "@/lib/api-handler";
 import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
+import { envValue } from "@/lib/env";
 import { join } from "path";
 
 export interface AntigravityDisconnectResponse {
@@ -45,7 +46,7 @@ export const POST = apiHandler(async () => {
     },
   });
 
-  const profileRoot = process.env.ANTIGRAVITY_PROFILE_ROOT;
+  const profileRoot = envValue("ANTIGRAVITY_PROFILE_ROOT");
   const folder =
     profileRoot && existing?.antigravityProfileId
       ? join(profileRoot, existing.antigravityProfileId)
