@@ -240,8 +240,6 @@ export function reasoningSupportForChainEntry(
     compatBaseUrl?: string | null;
     adminModel?: string | null;
     adminIsAnthropic?: boolean;
-    antigravityModel?: string | null;
-    antigravityThoughtLevel?: string | null;
   },
 ): ReasoningSupport {
   switch (providerType) {
@@ -268,13 +266,8 @@ export function reasoningSupportForChainEntry(
           )
         : reasoningSupport("admin-key", config.adminModel ?? "gpt-4o");
     case "antigravity":
-      // Antigravity supports thought_level config option.
-      // Reasoning summaries are NOT supported (not equivalent to thought chunks).
-      // Return minimal support: effort only, no summaries.
-      return {
-        effort: config.antigravityThoughtLevel ?? "medium",
-        summaries: false,
-        offIsReal: false,
-      };
+      // The CLI's sandbox handles the work. Reasoning effort is not sent, so the
+      // provider reports no effort control and no summaries.
+      return reasoningSupport("antigravity", "");
   }
 }

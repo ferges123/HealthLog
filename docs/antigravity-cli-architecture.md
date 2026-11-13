@@ -203,8 +203,17 @@ const allSupportTools = chainEntries.every(entry =>
 - No sharing between users
 - No inheritance from operator's profile
 
+**Current state (Stage 2 code)**: the provider runs only when
+`ANTIGRAVITY_PROFILE_ROOT` is an absolute path and `<root>/<userId>` already
+exists. Otherwise the provider resolves to nothing, so no call reaches the
+CLI under the server login. HealthLog does not create the profile directory or
+run the login yet (Stages 4 and 5). Consent is required before the first call,
+like the other external providers.
+
 **Blockers to verify**:
 1. Does `--app-data-dir` isolate ALL state (cache, keyring, sessions)?
+   It also must accept an absolute path. The transport decision records an
+   earlier "must not be absolute" error that is still open.
 2. Can two profiles run concurrently?
 3. What happens when profile directory is deleted?
 

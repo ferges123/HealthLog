@@ -250,6 +250,8 @@ export function reasoningSupport(
         offIsReal: true,
       };
     case "none":
+    case "antigravity":
+      // Reasoning effort is not sent to the CLI, so no effort control is offered.
       return NONE;
   }
 }

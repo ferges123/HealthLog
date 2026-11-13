@@ -11,6 +11,7 @@ import { chainEntryReadsImages } from "./codex-slug-chain";
 import { OpenAIClient } from "./openai-client";
 import { AnthropicClient } from "./anthropic-client";
 import { LocalOpenAICompatibleClient } from "./local-client";
+import { antigravityProfileDir } from "./antigravity-client";
 import {
   refreshDeviceTokens,
   codexReconnectRequired,
@@ -1124,6 +1125,8 @@ export function probeProviderChain(
             );
           case "admin-openai":
             return adminKey;
+          case "antigravity":
+            return antigravityProfileDir(recordId) !== null;
           default:
             // `admin-codex` is never resolved from a stored chain entry.
             return false;
@@ -1265,15 +1268,13 @@ async function resolveProviderForType(
       // hand-crafted `admin-codex` chain entry from bypassing that gate.
       return null;
     case "antigravity": {
-      // v1.48.0 — Antigravity CLI provider. Credentials are NOT stored in DB;
-      // the CLI uses its own auth. Configuration (model, profile) will come
-      // from User.antigravityModel and User.antigravityProfileId in Stage 4.
-      // For Stage 2, we return a basic client without customization.
+      // v1.48.0 — Antigravity CLI provider. Credentials stay in the CLI's own
+      // profile directory, never in the DB. Without a profile for this user the
+      // CLI would run under the server's shared login, so the provider stays off.
+      const profileDir = antigravityProfileDir(ctx.userId);
+      if (!profileDir) return null;
       const { AntigravityClient } = await import("./antigravity-client");
-      return new AntigravityClient({
-        model: null, // TODO: ctx.userRow?.antigravityModel
-        thoughtLevel: "medium",
-      });
+      return new AntigravityClient({ profileDir });
     }
     default:
       return null;

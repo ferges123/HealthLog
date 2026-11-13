@@ -228,8 +228,18 @@ class ACPClient {
 
       try {
         const message: JsonRpcMessage = JSON.parse(line);
+        const agentRequest = message as unknown as {
+          id?: number | string;
+          method?: string;
+          params?: unknown;
+        };
 
-        if ("id" in message && message.id !== undefined) {
+        if (agentRequest.method !== undefined && agentRequest.id !== undefined) {
+          // A request from the agent (e.g. session/request_permission). Answer
+          // it under the same id. Matching it against pending client requests
+          // would resolve the wrong call.
+          this.answerAgentRequest(agentRequest.id, agentRequest.method, agentRequest.params);
+        } else if ("id" in message && message.id !== undefined) {
           // Response
           const pending = this.pendingRequests.get(message.id);
           if (pending) {
@@ -244,6 +254,34 @@ class ACPClient {
         console.error("[ACP] Failed to parse message:", line.substring(0, 100));
       }
     }
+  }
+
+  private answerAgentRequest(
+    id: number | string,
+    method: string,
+    params: unknown,
+  ): void {
+    if (method === "session/request_permission") {
+      const options =
+        (params as { options?: Array<{ optionId: string; kind: string }> } | undefined)
+          ?.options ?? [];
+      const reject = options.find((o) => o.kind === "reject_once");
+      const outcome = reject
+        ? { outcome: "selected", optionId: reject.optionId }
+        : { outcome: "cancelled" };
+      console.log(`[ACP] Permission request answered: ${outcome.outcome}`);
+      this.process?.stdin?.write(
+        JSON.stringify({ jsonrpc: "2.0", id, result: { outcome } }) + "\n",
+      );
+      return;
+    }
+    this.process?.stdin?.write(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `Method not supported: ${method}` },
+      }) + "\n",
+    );
   }
 
   private handleNotification(notification: JsonRpcNotification): void {

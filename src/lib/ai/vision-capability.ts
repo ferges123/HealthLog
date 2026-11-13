@@ -127,7 +127,7 @@ export function supportsVisionForConfig(
       return model ? openAIFamilySupportsVision(model) : false;
     case "antigravity":
       // Conservative: false until runtime capability confirms
-      // TODO: Query from antigravityCapabilitiesJson after Stage 3
+      // Stays false until multimodal input is verified end to end (Stage 3).
       return false;
     case "none":
     default:

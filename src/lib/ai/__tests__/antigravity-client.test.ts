@@ -9,8 +9,9 @@ vi.mock("child_process", () => ({
 
 // Mock fs-temp operations
 vi.mock("fs", () => ({
-  mkdirSync: vi.fn(),
+  mkdtempSync: vi.fn(() => "/tmp/healthlog-acp-test"),
   rmSync: vi.fn(),
+  existsSync: vi.fn(() => true),
 }));
 
 vi.mock("os", () => ({
@@ -19,18 +20,23 @@ vi.mock("os", () => ({
 
 import { spawn } from "child_process";
 
-function createMockProcess() {
+function createMockProcess({
+  spawnEvent = true,
+}: { spawnEvent?: boolean } = {}) {
   const handlers: {
     stdout: ((data: Buffer) => void)[];
     stderr: ((data: Buffer) => void)[];
     close: ((code: number | null) => void)[];
     error: ((err: Error) => void)[];
-  } = { stdout: [], stderr: [], close: [], error: [] };
+    exit: ((code: number | null, signal: string | null) => void)[];
+    spawn: (() => void)[];
+  } = { stdout: [], stderr: [], close: [], error: [], exit: [], spawn: [] };
 
   let stdinBuffer = "";
 
   const proc = {
     stdin: {
+      on: vi.fn(),
       write: vi.fn((data: string) => {
         stdinBuffer += data;
         // Process complete lines
@@ -55,13 +61,27 @@ function createMockProcess() {
       on: vi.fn((event: string, handler: (data: Buffer) => void) => {
         if (event === "data") handlers.stderr.push(handler);
       }),
+      resume: vi.fn(),
     },
-    on: vi.fn((event: string, handler: (code: number | null) => void | ((err: Error) => void)) => {
-      if (event === "close") handlers.close.push(handler as (code: number | null) => void);
-      if (event === "error") handlers.error.push(handler as (err: Error) => void);
+    pid: 4242,
+    exitCode: null as number | null,
+    signalCode: null as string | null,
+    on: vi.fn((event: string, handler: (...args: never[]) => void) => {
+      if (event === "close")
+        handlers.close.push(handler as (code: number | null) => void);
+      if (event === "error")
+        handlers.error.push(handler as (err: Error) => void);
+      if (event === "exit")
+        handlers.exit.push(
+          handler as (code: number | null, signal: string | null) => void,
+        );
+      if (event === "spawn") {
+        handlers.spawn.push(handler as () => void);
+        if (spawnEvent) setTimeout(() => handlers.spawn.forEach((h) => h()), 0);
+      }
     }),
     kill: vi.fn(() => {
-      setTimeout(() => handlers.close.forEach((h) => h(0)), 10);
+      setTimeout(() => handlers.exit.forEach((h) => h(0, null)), 10);
     }),
   };
 
@@ -70,7 +90,12 @@ function createMockProcess() {
     handlers.stdout.forEach((h) => h(data));
   }
 
-  function handleMockMessage(msg: { jsonrpc: string; id?: number; method?: string; params?: unknown }) {
+  function handleMockMessage(msg: {
+    jsonrpc: string;
+    id?: number;
+    method?: string;
+    params?: unknown;
+  }) {
     if (msg.method === "initialize") {
       sendMessage({
         jsonrpc: "2.0",
@@ -88,8 +113,16 @@ function createMockProcess() {
         result: {
           sessionId: "test-session-123",
           configOptions: [
-            { name: "Model", type: "select", enum: ["gemini-3.8-flash-medium"] },
-            { name: "Thinking Level", type: "select", enum: ["low", "medium", "high"] },
+            {
+              name: "Model",
+              type: "select",
+              enum: ["gemini-3.8-flash-medium"],
+            },
+            {
+              name: "Thinking Level",
+              type: "select",
+              enum: ["low", "medium", "high"],
+            },
           ],
         },
       });
@@ -162,7 +195,9 @@ describe("AntigravityClient", () => {
       expect(result.content.length).toBeGreaterThan(0);
       expect(result.providerType).toBe("antigravity");
       expect(typeof result.model).toBe("string");
-      expect(result.tokensUsed === null || typeof result.tokensUsed === "number").toBe(true);
+      expect(
+        result.tokensUsed === null || typeof result.tokensUsed === "number",
+      ).toBe(true);
     });
 
     it("includes system prompt in the request", async () => {
@@ -211,7 +246,7 @@ describe("AntigravityClient", () => {
 
   describe("error handling", () => {
     it("throws CLI_UNAVAILABLE when spawn error event fires", async () => {
-      const { proc, handlers } = createMockProcess();
+      const { proc, handlers } = createMockProcess({ spawnEvent: false });
       mockSpawn.mockReturnValue(proc);
 
       const client = new AntigravityClient();

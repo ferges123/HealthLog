@@ -1,103 +1,48 @@
 /**
- * Antigravity CLI (agy) ACP provider for HealthLog.
+ * Antigravity CLI (`agy acp`) provider for HealthLog.
  *
- * This client implements the AIProvider contract over the Agent Client
- * Protocol (ACP) v1, communicating via JSON-RPC over stdio with the
- * `agy acp` subprocess.
+ * Speaks ACP v1 (JSON-RPC 2.0, one message per line) over the stdio of an
+ * `agy acp` child process. Each call starts its own child process and ACP
+ * session, and nothing is shared between calls.
  *
- * Key constraints (see docs/antigravity-cli-architecture.md):
- * - supportsTools = false (ACP tools are for agent operations, not function calling)
- * - No credential storage in DB (uses CLI auth)
- * - New session per completion (no session ID persistence)
- * - Streaming via agent_message_chunk notifications
- * - All permission requests are rejected
+ * Guarantees:
+ * - The child runs in an empty temporary workspace, deleted when the call ends.
+ * - The child gets an allowlisted environment only, so app secrets stay out.
+ * - The child runs under the profile directory the caller passes in
+ *   (`profileDir`, `--app-data-dir`). It never uses the server's default login.
+ * - The agent gets no MCP servers and no fs or terminal capabilities.
+ * - Every permission request from the agent is refused.
  *
+ * @see docs/antigravity-cli-architecture.md
  * @see docs/antigravity-cli-transport-decision.md
  */
 
-import { spawn, ChildProcess } from "child_process";
-import { randomUUID } from "crypto";
-import { mkdirSync, rmSync } from "fs";
+import { spawn, type ChildProcess } from "child_process";
+import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { isAbsolute, join } from "path";
+import { StringDecoder } from "string_decoder";
 import type {
   AIProvider,
+  AiContentPart,
+  AiMessage,
   CompletionParams,
   CompletionResult,
-  AiContentPart,
   ProviderType,
 } from "./types";
 
-// ─── ACP JSON-RPC Types ───────────────────────────────────────
+// ─── Errors ──────────────────────────────────────────────────
 
-interface JsonRpcRequest {
-  jsonrpc: "2.0";
-  id: number | string;
-  method: string;
-  params?: unknown;
-}
-
-interface JsonRpcResponse {
-  jsonrpc: "2.0";
-  id: number | string;
-  result?: unknown;
-  error?: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
-
-interface JsonRpcNotification {
-  jsonrpc: "2.0";
-  method: string;
-  params?: unknown;
-}
-
-type JsonRpcMessage = JsonRpcResponse | JsonRpcNotification;
-
-interface ACPInitializeResult {
-  protocolVersion: string;
-  agentInfo: {
-    name: string;
-    version: string;
-  };
-  capabilities?: {
-    promptCapabilities?: {
-      text?: boolean;
-      image?: boolean;
-      audio?: boolean;
-      resourceBlob?: boolean;
-    };
-    [key: string]: unknown;
-  };
-}
-
-interface ACPConfigOption {
-  name: string;
-  type: string;
-  displayName?: string;
-  enum?: string[];
-  default?: unknown;
-  [key: string]: unknown;
-}
-
-interface ACPSessionNewResult {
-  sessionId: string;
-  configOptions?: ACPConfigOption[];
-}
-
-interface ACPPromptResult {
-  stopReason?: "end_turn" | "max_tokens" | "cancelled" | "refusal";
-}
-
-interface ACPSessionUpdate {
-  sessionUpdate: string;
-  content?: { type: string; text?: string };
-  [key: string]: unknown;
-}
-
-// ─── Error Codes ─────────────────────────────────────────────
+export const ANTIGRAVITY_ERRORS = {
+  CLI_UNAVAILABLE: "cli_unavailable",
+  AUTH_REQUIRED: "auth_required",
+  SESSION_FAILED: "session_failed",
+  PROMPT_FAILED: "prompt_failed",
+  QUOTA_EXCEEDED: "quota_exceeded",
+  CANCELLED: "cancelled",
+  TIMEOUT: "timeout",
+  PROCESS_ERROR: "process_error",
+} as const;
 
 export class AntigravityError extends Error {
   constructor(
@@ -110,467 +55,629 @@ export class AntigravityError extends Error {
   }
 }
 
-export const ANTIGRAVITY_ERRORS = {
-  CLI_UNAVAILABLE: "cli_unavailable",
-  AUTH_REQUIRED: "auth_required",
-  SESSION_FAILED: "session_failed",
-  PROMPT_FAILED: "prompt_failed",
-  QUOTA_EXCEEDED: "quota_exceeded",
-  MODEL_UNAVAILABLE: "model_unavailable",
-  CANCELLED: "cancelled",
-  TIMEOUT: "timeout",
-  PROCESS_ERROR: "process_error",
-} as const;
+// ─── Constants ───────────────────────────────────────────────
 
-// ─── Client Implementation ───────────────────────────────────
+/** Operator-set root that holds one profile directory per user id. */
+const PROFILE_ROOT_ENV = "ANTIGRAVITY_PROFILE_ROOT";
+const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Environment variables passed to the child. Everything else is dropped. */
+const CHILD_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LANG",
+  "LC_ALL",
+  "TZ",
+  "TMPDIR",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_STATE_HOME",
+] as const;
+
+const PROTOCOL_VERSION = 1;
+const SETUP_TIMEOUT_MS = 30_000;
+const DEFAULT_PROMPT_TIMEOUT_MS = 60_000;
+const KILL_GRACE_MS = 2_000;
+/** Upper bound on one unparsed line. A runaway agent cannot grow memory without limit. */
+const MAX_BUFFER_CHARS = 16 * 1024 * 1024;
+
+const ROLE_LABEL: Record<AiMessage["role"], string> = {
+  user: "User",
+  assistant: "Assistant",
+  tool: "Tool result",
+};
+
+// ─── Profile directory ───────────────────────────────────────
+
+/**
+ * The profile directory the CLI must use for this user, or null when none is
+ * set up. Null means the provider must not run: without an isolated profile
+ * the CLI would fall back to the server's login, which every user shares.
+ *
+ * The directory must already exist. Nothing in HealthLog creates it yet.
+ */
+export function antigravityProfileDir(userId: string): string | null {
+  const root = process.env[PROFILE_ROOT_ENV];
+  if (!root || !isAbsolute(root) || !USER_ID_PATTERN.test(userId)) return null;
+  const dir = join(root, userId);
+  return existsSync(dir) ? dir : null;
+}
+
+// ─── ACP wire types ──────────────────────────────────────────
+
+interface JsonRpcError {
+  code: number;
+  message: string;
+}
+
+interface JsonRpcResponse {
+  id: number | string;
+  result?: unknown;
+  error?: JsonRpcError;
+}
+
+interface JsonRpcMessage {
+  id?: number | string;
+  method?: string;
+  params?: unknown;
+  result?: unknown;
+  error?: JsonRpcError;
+}
+
+interface AcpInitializeResult {
+  agentInfo?: { name?: string };
+  capabilities?: {
+    promptCapabilities?: { image?: boolean; resourceBlob?: boolean };
+  };
+}
+
+interface AcpSessionNewResult {
+  sessionId?: string;
+}
+
+interface AcpPromptResult {
+  stopReason?: string;
+}
+
+interface AcpSessionUpdate {
+  sessionUpdate: string;
+  content?: { type?: string; text?: string };
+}
+
+interface AcpPermissionOption {
+  optionId: string;
+  kind: string;
+}
+
+type AcpPromptBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string }
+  | {
+      type: "resource";
+      resource: { uri: string; mimeType: string; blob: string };
+    };
+
+// ─── One child process and its JSON-RPC connection ───────────
+
+interface PendingCall {
+  resolve: (response: JsonRpcResponse) => void;
+  reject: (error: AntigravityError) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+class AcpConnection {
+  private readonly decoder = new StringDecoder("utf8");
+  private buffer = "";
+  private nextId = 1;
+  private readonly pending = new Map<number | string, PendingCall>();
+  private failure: AntigravityError | null = null;
+  private readonly exited: Promise<void>;
+
+  /** Receives each `session/update` notification from the agent. */
+  onSessionUpdate: (update: AcpSessionUpdate) => void = () => {};
+
+  private constructor(private readonly child: ChildProcess) {
+    this.exited = new Promise<void>((resolve) => {
+      child.on("exit", () => resolve());
+    });
+    child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
+    // stderr can carry user data or secrets. Drain it and never log it.
+    child.stderr?.resume();
+    child.stdin?.on("error", () =>
+      this.fail(
+        new AntigravityError(
+          "agy stdin closed",
+          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+        ),
+      ),
+    );
+    child.on("error", (err) =>
+      this.fail(
+        new AntigravityError(
+          "agy process error",
+          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+          err,
+        ),
+      ),
+    );
+    child.on("exit", (code, signal) =>
+      this.fail(
+        new AntigravityError(
+          `agy exited (code ${code}, signal ${signal})`,
+          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+        ),
+      ),
+    );
+  }
+
+  /** Spawn `agy` and resolve once the process has started. */
+  static start(
+    args: string[],
+    options: { cwd: string; env: NodeJS.ProcessEnv },
+  ): Promise<AcpConnection> {
+    return new Promise((resolve, reject) => {
+      let child: ChildProcess;
+      try {
+        child = spawn("agy", args, {
+          cwd: options.cwd,
+          env: options.env,
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+      } catch (err) {
+        reject(
+          new AntigravityError(
+            "Failed to start agy",
+            ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
+            err,
+          ),
+        );
+        return;
+      }
+      let started = false;
+      child.on("spawn", () => {
+        started = true;
+        resolve(new AcpConnection(child));
+      });
+      child.on("error", (err) => {
+        if (!started) {
+          reject(
+            new AntigravityError(
+              "Failed to start agy",
+              ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
+              err,
+            ),
+          );
+        }
+      });
+    });
+  }
+
+  /**
+   * Send a request and wait for its response. Rejects on timeout or when the
+   * connection fails. A JSON-RPC error in the response is returned, not thrown.
+   */
+  call(
+    method: string,
+    params: unknown,
+    timeoutMs: number,
+  ): Promise<JsonRpcResponse> {
+    if (this.failure) return Promise.reject(this.failure);
+    const id = this.nextId++;
+    return new Promise<JsonRpcResponse>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(
+          new AntigravityError(
+            `${method} timed out after ${timeoutMs} ms`,
+            ANTIGRAVITY_ERRORS.TIMEOUT,
+          ),
+        );
+      }, timeoutMs);
+      this.pending.set(id, { resolve, reject, timer });
+      this.write({ jsonrpc: "2.0", id, method, params });
+    });
+  }
+
+  /** Stop the process: SIGTERM, then SIGKILL after a grace period. */
+  async close(): Promise<void> {
+    this.fail(
+      new AntigravityError(
+        "agy connection closed",
+        ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+      ),
+    );
+    const child = this.child;
+    if (
+      child.pid === undefined ||
+      child.exitCode !== null ||
+      child.signalCode !== null
+    ) {
+      return;
+    }
+    const killTimer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
+    killTimer.unref();
+    child.kill("SIGTERM");
+    await this.exited;
+    clearTimeout(killTimer);
+  }
+
+  private write(message: object): void {
+    this.child.stdin?.write(JSON.stringify(message) + "\n");
+  }
+
+  private fail(error: AntigravityError): void {
+    if (this.failure) return;
+    this.failure = error;
+    for (const [id, call] of this.pending) {
+      this.pending.delete(id);
+      clearTimeout(call.timer);
+      call.reject(error);
+    }
+  }
+
+  private onData(chunk: Buffer): void {
+    // StringDecoder keeps a multi-byte character that is split across chunks
+    // intact (Polish letters are two bytes in UTF-8).
+    this.buffer += this.decoder.write(chunk);
+    if (this.buffer.length > MAX_BUFFER_CHARS) {
+      this.fail(
+        new AntigravityError(
+          "agy sent an oversized message",
+          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+        ),
+      );
+      return;
+    }
+    let newline = this.buffer.indexOf("\n");
+    while (newline !== -1) {
+      const line = this.buffer.slice(0, newline).trim();
+      this.buffer = this.buffer.slice(newline + 1);
+      if (line) this.onLine(line);
+      newline = this.buffer.indexOf("\n");
+    }
+  }
+
+  private onLine(line: string): void {
+    let msg: JsonRpcMessage;
+    try {
+      msg = JSON.parse(line) as JsonRpcMessage;
+    } catch {
+      // Not logged: the line may contain user data.
+      return;
+    }
+    if (!msg || typeof msg !== "object") return;
+
+    if (typeof msg.method === "string") {
+      if (msg.id !== undefined) {
+        // A request from the agent. It must be answered under the same id.
+        this.onAgentRequest(msg.id, msg.method, msg.params);
+      } else if (msg.method === "session/update") {
+        const update = (msg.params as { update?: AcpSessionUpdate } | undefined)
+          ?.update;
+        if (update) this.onSessionUpdate(update);
+      }
+      return;
+    }
+
+    if (msg.id !== undefined) {
+      const call = this.pending.get(msg.id);
+      if (!call) return;
+      this.pending.delete(msg.id);
+      clearTimeout(call.timer);
+      call.resolve({ id: msg.id, result: msg.result, error: msg.error });
+    }
+  }
+
+  private onAgentRequest(
+    id: number | string,
+    method: string,
+    params: unknown,
+  ): void {
+    if (method === "session/request_permission") {
+      // HealthLog grants no permissions. Choose a reject-once option when the
+      // agent offers one. Otherwise answer "cancelled".
+      const options =
+        (params as { options?: AcpPermissionOption[] } | undefined)?.options ??
+        [];
+      const reject = options.find((o) => o.kind === "reject_once");
+      const outcome = reject
+        ? { outcome: "selected", optionId: reject.optionId }
+        : { outcome: "cancelled" };
+      this.write({ jsonrpc: "2.0", id, result: { outcome } });
+      return;
+    }
+    this.write({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32601, message: `Method not supported: ${method}` },
+    });
+  }
+}
+
+// ─── Request helpers ─────────────────────────────────────────
+
+function childEnv(): NodeJS.ProcessEnv {
+  // The project's ProcessEnv type requires NODE_ENV. The allowlist fills the rest.
+  const env = {} as NodeJS.ProcessEnv;
+  for (const key of CHILD_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+/** The text of a message's content, with media parts left out. */
+function textOf(content: AiMessage["content"]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter(
+      (part): part is Extract<AiContentPart, { type: "text" }> =>
+        part.type === "text",
+    )
+    .map((part) => part.text)
+    .join("\n");
+}
+
+/**
+ * Turn the request into ACP prompt blocks: one text block (system prompt
+ * followed by the conversation), then one block per attached image or PDF.
+ */
+function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
+  const { messages } = params;
+  const single = messages.length === 1 && messages[0].role === "user";
+  const body = single
+    ? textOf(messages[0].content)
+    : messages
+        .map((m) => `${ROLE_LABEL[m.role]}: ${textOf(m.content)}`)
+        .join("\n\n");
+  const text = [params.system, body].filter(Boolean).join("\n\n");
+
+  const blocks: AcpPromptBlock[] = [];
+  if (text) blocks.push({ type: "text", text });
+
+  let documents = 0;
+  for (const message of messages) {
+    if (typeof message.content === "string") continue;
+    for (const part of message.content) {
+      if (part.type === "image") {
+        blocks.push({
+          type: "image",
+          mimeType: part.mediaType,
+          data: part.dataBase64,
+        });
+      } else if (part.type === "document") {
+        documents += 1;
+        blocks.push({
+          type: "resource",
+          resource: {
+            uri: `healthlog://attachment-${documents}.pdf`,
+            mimeType: part.mediaType,
+            blob: part.dataBase64,
+          },
+        });
+      }
+    }
+  }
+  return blocks;
+}
+
+function cancelledError(): AntigravityError {
+  return new AntigravityError(
+    "Request cancelled",
+    ANTIGRAVITY_ERRORS.CANCELLED,
+  );
+}
+
+/** Unwrap a response, or throw with a generic message. The CLI text stays in originalError. */
+function resultOrThrow<T>(
+  response: JsonRpcResponse,
+  code: string,
+  label: string,
+): T {
+  if (response.error) {
+    const authRequired = /authentication required/i.test(
+      response.error.message,
+    );
+    throw new AntigravityError(
+      label,
+      authRequired ? ANTIGRAVITY_ERRORS.AUTH_REQUIRED : code,
+      response.error,
+    );
+  }
+  return response.result as T;
+}
+
+// ─── Client ──────────────────────────────────────────────────
+
+interface AntigravityClientOptions {
+  /**
+   * Profile directory passed as `--app-data-dir`. Get it from
+   * {@link antigravityProfileDir}. Without it the CLI uses the server login.
+   */
+  profileDir?: string;
+  /** Prompt timeout used when the call does not set `timeoutMs`. */
+  timeoutMs?: number;
+}
 
 export class AntigravityClient implements AIProvider {
   readonly type: ProviderType = "antigravity";
-  readonly supportsTools = false; // ACP tools are NOT HealthLog function calling
+  /** ACP tools are the agent's own tools, not HealthLog function calling. */
+  readonly supportsTools = false;
 
-  private process: ChildProcess | null = null;
-  private requestId = 0;
-  private pendingRequests = new Map<
-    number | string,
-    {
-      resolve: (response: JsonRpcResponse) => void;
-      reject: (error: Error) => void;
-    }
-  >();
-  private buffer = "";
-  private notifications: JsonRpcNotification[] = [];
-  private sessionWarnings: string[] = [];
+  constructor(private readonly options: AntigravityClientOptions = {}) {}
 
-  constructor(
-    private config: {
-      /** User's selected model (from antigravityModel field) */
-      model?: string | null;
-      /** Reasoning effort: "low" | "medium" | "high" | "xhigh" | "max" */
-      thoughtLevel?: string;
-      /** Profile ID for isolation (not used in Stage 2 - uses default auth) */
-      profileId?: string;
-      /** Timeout for operations in ms */
-      timeoutMs?: number;
-    } = {},
-  ) {}
-
-  // ─── AIProvider Implementation ─────────────────────────────
-
-  async generateCompletion(params: CompletionParams): Promise<CompletionResult> {
-    const { signal } = params;
-
-    try {
-      // 1. Start ACP process
-      await this.startProcess(signal);
-
-      // 2. Initialize ACP
-      await this.initialize(signal);
-
-      // 3. Create session
-      const sessionId = await this.createSession(signal);
-
-      // 4. Send prompt and collect response
-      const result = await this.sendPrompt(sessionId, params, signal);
-
-      // 5. Return result
-      return result;
-    } finally {
-      // Always clean up
-      await this.stopProcess();
-    }
+  async generateCompletion(
+    params: CompletionParams,
+  ): Promise<CompletionResult> {
+    return this.run(params);
   }
 
   async generateCompletionStream(
     params: CompletionParams,
     onDelta: (delta: string) => void,
   ): Promise<CompletionResult> {
+    return this.run(params, onDelta);
+  }
+
+  private async run(
+    params: CompletionParams,
+    onDelta?: (delta: string) => void,
+  ): Promise<CompletionResult> {
     const { signal } = params;
+    if (signal?.aborted) throw cancelledError();
+
+    const blocks = buildPromptBlocks(params);
+    const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
+    const state: { connection: AcpConnection | null; done: boolean } = {
+      connection: null,
+      done: false,
+    };
+
+    let onAbort: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      onAbort = () => reject(cancelledError());
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    // The race below handles the rejection. This keeps it from surfacing as
+    // unhandled when the work finishes first.
+    cancelled.catch(() => undefined);
 
     try {
-      await this.startProcess(signal);
-      await this.initialize(signal);
-      const sessionId = await this.createSession(signal);
-
-      // Stream mode - call onDelta for each chunk
-      const result = await this.sendPrompt(sessionId, params, signal, onDelta);
-
-      return result;
+      return await Promise.race([
+        this.execute(workDir, blocks, params, onDelta, state),
+        cancelled,
+      ]);
     } finally {
-      await this.stopProcess();
+      state.done = true;
+      if (onAbort) signal?.removeEventListener("abort", onAbort);
+      await state.connection?.close();
+      rmSync(workDir, { recursive: true, force: true });
     }
   }
 
-  // ─── Process Lifecycle ─────────────────────────────────────
-
-  private async startProcess(signal?: AbortSignal): Promise<void> {
-    if (this.process) return;
-
-    return new Promise((resolve, reject) => {
-      const timeout = this.config.timeoutMs ?? 60_000;
-
-      // Create temp work directory
-      const workDir = join(tmpdir(), `healthlog-acp-${randomUUID()}`);
-      mkdirSync(workDir, { recursive: true, mode: 0o700 });
-
-      // Spawn agy acp process
-      // NOTE: Not using --app-data-dir in Stage 2 (uses default auth)
-      this.process = spawn("agy", ["acp", "--sandbox", "--disable-telemetry"], {
-        stdio: ["pipe", "pipe", "pipe"],
-        cwd: workDir,
-        env: {
-          ...process.env,
-          // Strip secrets
-          ANTHROPIC_API_KEY: undefined,
-          OPENAI_API_KEY: undefined,
-        },
-      });
-
-      this.process.on("error", (err) => {
-        this.process = null;
-        reject(
-          new AntigravityError(
-            `Failed to start agy: ${err.message}`,
-            ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
-            err,
-          ),
-        );
-      });
-
-      this.process.stdout?.on("data", (data: Buffer) => {
-        this.handleData(data.toString());
-      });
-
-      this.process.stderr?.on("data", () => {
-        // Ignore stderr - may contain sensitive data
-      });
-
-      this.process.on("close", (code) => {
-        this.process = null;
-      });
-
-      // Wait for process to start
-      setTimeout(resolve, 500);
-
-      // Abort handler
-      signal?.addEventListener("abort", () => {
-        this.stopProcess();
-        reject(new AntigravityError("Aborted", ANTIGRAVITY_ERRORS.CANCELLED));
-      });
-
-      // Timeout
-      setTimeout(() => {
-        if (!this.process) return;
-        reject(new AntigravityError("Process start timeout", ANTIGRAVITY_ERRORS.TIMEOUT));
-      }, 5000);
-    });
-  }
-
-  private handleData(data: string): void {
-    this.buffer += data;
-
-    const lines = this.buffer.split("\n");
-    this.buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-
-      try {
-        const message: JsonRpcMessage = JSON.parse(line);
-
-        if ("id" in message && message.id !== undefined) {
-          // Response to a request
-          const pending = this.pendingRequests.get(message.id);
-          if (pending) {
-            this.pendingRequests.delete(message.id);
-            pending.resolve(message);
-          }
-        } else if ("method" in message) {
-          // Notification
-          this.handleNotification(message);
-        }
-      } catch {
-        // Ignore parse errors
-      }
-    }
-  }
-
-  private handleNotification(notification: JsonRpcNotification): void {
-    this.notifications.push(notification);
-
-    // Handle permission requests - always reject
-    if (notification.method === "session/request_permission") {
-      const params = notification.params as { requestId: string };
-      this.rejectPermission(params.requestId).catch(() => {});
-    }
-
-    // Collect session warnings
-    if (notification.method === "session/update") {
-      const params = notification.params as { update?: ACPSessionUpdate };
-      if (params.update?.sessionUpdate === "usage_update") {
-        // Check for quota warnings
-        const content = JSON.stringify(params.update);
-        if (content.includes("quota")) {
-          this.sessionWarnings.push("Quota warning received");
-        }
-      }
-    }
-  }
-
-  private async stopProcess(): Promise<void> {
-    if (!this.process) return;
-
-    return new Promise((resolve) => {
-      if (!this.process) {
-        resolve();
-        return;
-      }
-
-      const timeout = setTimeout(() => {
-        this.process?.kill("SIGKILL");
-      }, 2000);
-
-      this.process.on("close", () => {
-        clearTimeout(timeout);
-        resolve();
-      });
-
-      this.process.kill("SIGTERM");
-    });
-  }
-
-  // ─── ACP Protocol Methods ───────────────────────────────────
-
-  private async initialize(signal?: AbortSignal): Promise<ACPInitializeResult> {
-    const { result, error } = await this.send<ACPInitializeResult>("initialize", {
-      protocolVersion: 1,
-      clientInfo: {
-        name: "HealthLog",
-        version: "1.0.0",
-      },
-    });
-
-    if (error) {
-      throw new AntigravityError(
-        `Initialize failed: ${error.message}`,
-        ANTIGRAVITY_ERRORS.SESSION_FAILED,
-        error,
-      );
-    }
-
-    return result!;
-  }
-
-  private async createSession(signal?: AbortSignal): Promise<string> {
-    const workDir = join(tmpdir(), `healthlog-acp-workspace-${randomUUID()}`);
-    mkdirSync(workDir, { recursive: true, mode: 0o700 });
-
-    const { result, error } = await this.send<ACPSessionNewResult>("session/new", {
-      cwd: workDir,
-      mcpServers: [], // No MCP servers
-    });
-
-    if (error) {
-      // Check for auth error
-      if (error.message.includes("Authentication required")) {
-        throw new AntigravityError(
-          "Authentication required",
-          ANTIGRAVITY_ERRORS.AUTH_REQUIRED,
-          error,
-        );
-      }
-      throw new AntigravityError(
-        `Session creation failed: ${error.message}`,
-        ANTIGRAVITY_ERRORS.SESSION_FAILED,
-        error,
-      );
-    }
-
-    // Set config options if specified
-    if (this.config.model || this.config.thoughtLevel) {
-      await this.configureSession(result!.sessionId, signal);
-    }
-
-    return result!.sessionId;
-  }
-
-  private async configureSession(sessionId: string, signal?: AbortSignal): Promise<void> {
-    // TODO: Implement config option setting via session/update
-    // For Stage 2, we rely on the model specified in the prompt
-  }
-
-  private async sendPrompt(
-    sessionId: string,
+  private async execute(
+    workDir: string,
+    blocks: AcpPromptBlock[],
     params: CompletionParams,
-    signal?: AbortSignal,
-    onStream?: (delta: string) => void,
+    onDelta: ((delta: string) => void) | undefined,
+    state: { connection: AcpConnection | null; done: boolean },
   ): Promise<CompletionResult> {
-    // Clear notifications
-    this.notifications = [];
-    this.sessionWarnings = [];
+    const args = ["acp", "--sandbox", "--disable-telemetry"];
+    if (this.options.profileDir) {
+      args.push("--app-data-dir", this.options.profileDir);
+    }
 
-    // Build prompt content
-    const prompt = this.buildPromptContent(params);
-
-    // Send prompt
-    const { result, error } = await this.send<ACPPromptResult>("session/prompt", {
-      sessionId,
-      prompt,
-      // TODO: Add reasoning config when supported
+    const connection = await AcpConnection.start(args, {
+      cwd: workDir,
+      env: childEnv(),
     });
+    state.connection = connection;
+    if (state.done) {
+      // The call was cancelled while the process was starting.
+      await connection.close();
+      throw cancelledError();
+    }
 
-    if (error) {
-      // Check for quota
-      if (error.message.includes("quota")) {
-        throw new AntigravityError(
-          "Quota exceeded",
-          ANTIGRAVITY_ERRORS.QUOTA_EXCEEDED,
-          error,
-        );
+    const chunks: string[] = [];
+    connection.onSessionUpdate = (update) => {
+      if (
+        update.sessionUpdate === "agent_message_chunk" &&
+        update.content?.type === "text" &&
+        typeof update.content.text === "string"
+      ) {
+        chunks.push(update.content.text);
+        onDelta?.(update.content.text);
       }
+    };
 
+    const init = resultOrThrow<AcpInitializeResult>(
+      await connection.call(
+        "initialize",
+        {
+          protocolVersion: PROTOCOL_VERSION,
+          clientInfo: { name: "HealthLog", version: "1.0.0" },
+        },
+        SETUP_TIMEOUT_MS,
+      ),
+      ANTIGRAVITY_ERRORS.SESSION_FAILED,
+      "Antigravity initialize failed",
+    );
+
+    const promptCaps = init?.capabilities?.promptCapabilities ?? {};
+    if (blocks.some((b) => b.type === "image") && promptCaps.image !== true) {
       throw new AntigravityError(
-        `Prompt failed: ${error.message}`,
+        "Antigravity does not accept image input",
         ANTIGRAVITY_ERRORS.PROMPT_FAILED,
-        error,
+      );
+    }
+    if (
+      blocks.some((b) => b.type === "resource") &&
+      promptCaps.resourceBlob !== true
+    ) {
+      throw new AntigravityError(
+        "Antigravity does not accept PDF input",
+        ANTIGRAVITY_ERRORS.PROMPT_FAILED,
       );
     }
 
-    // Collect response from notifications
-    const content = this.collectResponse(onStream);
-    const tokensUsed = this.extractTokens();
-    const model = this.config.model ?? "unknown";
+    const session = resultOrThrow<AcpSessionNewResult>(
+      await connection.call(
+        "session/new",
+        { cwd: workDir, mcpServers: [] },
+        SETUP_TIMEOUT_MS,
+      ),
+      ANTIGRAVITY_ERRORS.SESSION_FAILED,
+      "Antigravity session could not be created",
+    );
+    if (typeof session?.sessionId !== "string") {
+      throw new AntigravityError(
+        "Antigravity session could not be created",
+        ANTIGRAVITY_ERRORS.SESSION_FAILED,
+      );
+    }
+
+    const timeoutMs =
+      params.timeoutMs ?? this.options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
+    const response = await connection.call(
+      "session/prompt",
+      { sessionId: session.sessionId, prompt: blocks },
+      timeoutMs,
+    );
+    if (response.error) {
+      const quota = /quota/i.test(response.error.message);
+      throw new AntigravityError(
+        quota ? "Antigravity quota exceeded" : "Antigravity prompt failed",
+        quota
+          ? ANTIGRAVITY_ERRORS.QUOTA_EXCEEDED
+          : ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+        response.error,
+      );
+    }
+
+    const stopReason = (response.result as AcpPromptResult | undefined)
+      ?.stopReason;
+    if (stopReason === "cancelled") {
+      throw new AntigravityError(
+        "Antigravity cancelled the turn",
+        ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+      );
+    }
+    const content = chunks.join("");
+    if (!content) {
+      throw new AntigravityError(
+        "Antigravity returned an empty reply",
+        ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+      );
+    }
 
     return {
       content,
-      tokensUsed,
-      model,
+      tokensUsed: null,
+      model: init?.agentInfo?.name ?? "antigravity",
       providerType: "antigravity",
-      finishReason: this.mapStopReason(result?.stopReason),
+      finishReason: stopReason === "max_tokens" ? "length" : "stop",
     };
-  }
-
-  private buildPromptContent(params: CompletionParams): AiContentPart[] {
-    const parts: AiContentPart[] = [];
-
-    // Build message content
-    // For now, we use a single user message with system instructions
-    // TODO: Support multi-turn by encoding history
-
-    let userContent = "";
-
-    // Add system prompt as prefix (ACP doesn't have separate system)
-    if (params.system) {
-      userContent += params.system + "\n\n";
-    }
-
-    // Extract text from messages
-    for (const msg of params.messages) {
-      if (msg.role === "user") {
-        if (typeof msg.content === "string") {
-          userContent += msg.content;
-        } else {
-          // Handle multimodal content
-          for (const part of msg.content) {
-            if (part.type === "text") {
-              userContent += part.text;
-            } else if (part.type === "image") {
-              parts.push({
-                type: "image",
-                mimeType: part.mediaType,
-                data: part.dataBase64,
-              } as any); // ACP format
-            } else if (part.type === "document") {
-              // PDF as resource blob
-              parts.push({
-                type: "resource",
-                resource: {
-                  uri: `healthlog://document.pdf`,
-                  mimeType: part.mediaType,
-                  blob: part.dataBase64,
-                },
-              } as any);
-            }
-          }
-        }
-      }
-    }
-
-    // Add text part first
-    if (userContent) {
-      parts.unshift({ type: "text", text: userContent });
-    }
-
-    return parts;
-  }
-
-  private collectResponse(onStream?: (delta: string) => void): string {
-    const chunks: string[] = [];
-
-    for (const notif of this.notifications) {
-      if (notif.method === "session/update") {
-        const params = notif.params as { update?: ACPSessionUpdate };
-        if (params.update?.sessionUpdate === "agent_message_chunk") {
-          const text = params.update.content?.text ?? "";
-          chunks.push(text);
-          onStream?.(text);
-        }
-      }
-    }
-
-    return chunks.join("");
-  }
-
-  private extractTokens(): number | null {
-    // TODO: Extract from usage_update notification
-    return null;
-  }
-
-  private mapStopReason(
-    reason?: "end_turn" | "max_tokens" | "cancelled" | "refusal",
-  ): "stop" | "length" | undefined {
-    switch (reason) {
-      case "end_turn":
-        return "stop";
-      case "max_tokens":
-        return "length";
-      case "cancelled":
-        return undefined; // Will be handled differently
-      default:
-        return "stop";
-    }
-  }
-
-  // ─── JSON-RPC Helpers ─────────────────────────────────────────
-
-  private async send<T = unknown>(
-    method: string,
-    params?: unknown,
-  ): Promise<{ result?: T; error?: { code: number; message: string } }> {
-    return new Promise((resolve, reject) => {
-      if (!this.process?.stdin) {
-        reject(new AntigravityError("Process not running", ANTIGRAVITY_ERRORS.PROCESS_ERROR));
-        return;
-      }
-
-      const id = ++this.requestId;
-      const request: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
-
-      this.pendingRequests.set(id, {
-        resolve: (response) => {
-          resolve({
-            result: response.result as T | undefined,
-            error: response.error as { code: number; message: string } | undefined,
-          });
-        },
-        reject,
-      });
-
-      const line = JSON.stringify(request) + "\n";
-      this.process.stdin.write(line);
-    });
-  }
-
-  private async rejectPermission(requestId: string): Promise<void> {
-    await this.send("session/reject_permission", { requestId });
   }
 }
