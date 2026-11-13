@@ -172,6 +172,11 @@ ARG AGY_VERSION=1.5.8
 ARG AGY_SHA256_AMD64=b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9a2c5d8e7f6a9b2c5d8e7f4a1
 ARG AGY_SHA256_ARM64=a2c5d8e7f6a9b2c5d8e7f4a1b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9
 
+# Install wget for downloading the CLI binary
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
