@@ -6473,7 +6473,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Локальная модель",
           "openai-compatible": "Шлюз, совместимый с OpenAI",
-          "admin-openai": "OpenAI администратора"
+          "admin-openai": "OpenAI администратора",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Цепочка резервных провайдеров",
         "description": "Если активный провайдер не отвечает, HealthLog пробует следующий включённый в этом порядке.",
@@ -6497,7 +6498,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Локальная модель (совместимая с OpenAI)",
         "openai-compatible": "Шлюз, совместимый с OpenAI",
-        "admin-openai": "OpenAI от администратора"
+        "admin-openai": "OpenAI от администратора",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "Полноценный провайдер для любой конечной точки, поддерживающей API OpenAI /v1/chat/completions: LiteLLM, OpenRouter, vLLM или другой шлюз. Базовый URL оканчивается на /v1, API-ключ необязателен, а модель — та, которую маршрутизирует ваш шлюз. Ваш ключ OpenAI никогда не попадает на эту конечную точку; у этого провайдера свой.",
@@ -6534,6 +6536,33 @@
         "title": "OpenAI администратора",
         "body": "Ключ OpenAI, предоставленный оператором, используется как последний резерв, когда личный провайдер не настроен. Здесь настраивать нечего.",
         "notConfigured": "Оператор не настроил общий ключ OpenAI на этом экземпляре."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Настройте Antigravity CLI (agy) в качестве поставщика ИИ. CLI работает локально, но отправляет данные в сервисы Antigravity/Google.",
+        "cliInstallation": "Установка CLI",
+        "cliVersion": "Версия {version}",
+        "cliNotFound": "Не найдено",
+        "connectionStatus": "Статус подключения",
+        "statusDisconnected": "Отключено",
+        "statusConnected": "Подключено",
+        "statusAuthRequired": "Требуется аутентификация",
+        "statusError": "Ошибка",
+        "connectedAt": "Подключено: {when}",
+        "testConnection": "Проверить подключение",
+        "capabilities": "Возможности",
+        "capabilityImages": "Изображения",
+        "capabilityPdfNative": "PDF (Нативный)",
+        "capabilityTools": "Инструменты",
+        "capabilityAudio": "Аудио",
+        "modelLabel": "Модель",
+        "modelPlaceholder": "Выберите модель",
+        "thinkingLevelLabel": "Уровень мышления",
+        "thinkingLevelPlaceholder": "Выберите уровень мышления",
+        "externalProcessingTitle": "Внешняя обработка",
+        "externalProcessingBody": "Antigravity CLI работает локально, но отправляет данные в сервисы Antigravity/Google для обработки. Подробности об обработке данных см. в условиях использования Antigravity.",
+        "connectButton": "Подключить Antigravity",
+        "disconnectButton": "Отключить"
       },
       "testProvider": "Проверить активного провайдера",
       "testSuccess": "OK: {provider} ({model})",

@@ -16,6 +16,14 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -28,13 +36,15 @@ import { AlertCircle, CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { AntigravityStatusResponse } from "@/app/api/antigravity/status/route";
 import type { AntigravityModelsResponse } from "@/app/api/antigravity/models/route";
+import { useTranslations } from "@/lib/i18n/context";
 
 interface AntigravityProviderFormProps {
   userId: string;
   locale: string;
 }
 
-export function AntigravityProviderForm({ userId, locale }: AntigravityProviderFormProps) {
+export function AntigravityProviderForm({ userId }: AntigravityProviderFormProps) {
+  const { t } = useTranslations();
   const [status, setStatus] = useState<AntigravityStatusResponse | null>(null);
   const [models, setModels] = useState<AntigravityModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +52,8 @@ export function AntigravityProviderForm({ userId, locale }: AntigravityProviderF
   const [authenticating, setAuthenticating] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [selectedThinkingLevel, setSelectedThinkingLevel] = useState<string>("");
+  const [showAuthInstructions, setShowAuthInstructions] = useState(false);
+  const [authInstructions, setAuthInstructions] = useState<string[]>([]);
 
   useEffect(() => {
     loadStatus();
@@ -91,9 +103,8 @@ export function AntigravityProviderForm({ userId, locale }: AntigravityProviderF
       });
       if (response.ok) {
         const data = await response.json();
-        // Show instructions to user
-        alert(data.instructions.join("\n"));
-        // Reload status
+        setAuthInstructions(data.instructions);
+        setShowAuthInstructions(true);
         await loadStatus();
       }
     } catch (error) {
@@ -119,8 +130,13 @@ export function AntigravityProviderForm({ userId, locale }: AntigravityProviderF
   async function handleTestConnection() {
     setTesting(true);
     try {
-      // TODO: Implement connection test
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      const response = await fetch("/api/antigravity/status");
+      if (!response.ok) {
+        throw new Error("Failed to test connection");
+      }
+      await response.json();
+    } catch (error) {
+      console.error("Failed to test connection:", error);
     } finally {
       setTesting(false);
     }
@@ -143,160 +159,220 @@ export function AntigravityProviderForm({ userId, locale }: AntigravityProviderF
   );
 
   const connectionStatusMap = {
-    disconnected: { label: "Disconnected", color: "text-gray-500" },
-    connected: { label: "Connected", color: "text-green-500" },
-    auth_required: { label: "Authentication Required", color: "text-yellow-500" },
-    error: { label: "Error", color: "text-red-500" },
+    disconnected: {
+      label: t("settings.ai.antigravity.statusDisconnected"),
+      color: "text-gray-500",
+    },
+    connected: {
+      label: t("settings.ai.antigravity.statusConnected"),
+      color: "text-green-500",
+    },
+    auth_required: {
+      label: t("settings.ai.antigravity.statusAuthRequired"),
+      color: "text-yellow-500",
+    },
+    error: {
+      label: t("settings.ai.antigravity.statusError"),
+      color: "text-red-500",
+    },
   };
 
   const connectionInfo = connectionStatusMap[status?.connectionStatus || "disconnected"];
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Antigravity CLI</CardTitle>
-        <CardDescription>
-          Configure Antigravity CLI (agy) as an AI provider. The CLI runs locally but sends data
-          to Antigravity/Google services.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        {/* CLI Installation Status */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            {cliStatusIcon}
-            <div>
-              <p className="font-medium">CLI Installation</p>
-              <p className="text-sm text-muted-foreground">
-                {status?.cliInstalled
-                  ? `Version ${status.cliVersion || "unknown"}`
-                  : "Not found"}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Connection Status */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-medium">Connection Status</p>
-            <p className={`text-sm ${connectionInfo.color}`}>{connectionInfo.label}</p>
-            {status?.connectedAt && (
-              <p className="text-xs text-muted-foreground">
-                Connected: {new Date(status.connectedAt).toLocaleString()}
-              </p>
-            )}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleTestConnection}
-            disabled={testing || !status?.cliInstalled}
-          >
-            {testing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Test Connection
-          </Button>
-        </div>
-
-        {/* Capabilities */}
-        {status?.capabilities && (
-          <div>
-            <p className="font-medium mb-2">Capabilities</p>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="flex items-center space-x-2">
-                {status.capabilities.image ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
-                <span>Images</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                {status.capabilities.resourceBlob ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-500" />
-                )}
-                <span>PDF (Native)</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <XCircle className="h-4 w-4 text-red-500" />
-                <span>Tools</span>
-              </div>
-              <div className="flex items-center space-x-2">
-                <XCircle className="h-4 w-4 text-red-500" />
-                <span>Audio</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Model Selection */}
-        {models && models.models.length > 0 && (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="model">Model</Label>
-              <Select value={selectedModel} onValueChange={setSelectedModel}>
-                <SelectTrigger id="model">
-                  <SelectValue placeholder="Select a model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.models.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {models.thinkingLevels.length > 0 && (
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.ai.antigravity.title")}</CardTitle>
+          <CardDescription>{t("settings.ai.antigravity.description")}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* CLI Installation Status */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              {cliStatusIcon}
               <div>
-                <Label htmlFor="thinking-level">Thinking Level</Label>
-                <Select value={selectedThinkingLevel} onValueChange={setSelectedThinkingLevel}>
-                  <SelectTrigger id="thinking-level">
-                    <SelectValue placeholder="Select thinking level" />
+                <p className="font-medium">{t("settings.ai.antigravity.cliInstallation")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {status?.cliInstalled
+                    ? t("settings.ai.antigravity.cliVersion", {
+                        version: status.cliVersion || t("common.unknown"),
+                      })
+                    : t("settings.ai.antigravity.cliNotFound")}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Connection Status */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">{t("settings.ai.antigravity.connectionStatus")}</p>
+              <p className={`text-sm ${connectionInfo.color}`}>{connectionInfo.label}</p>
+              {status?.connectedAt && (
+                <p className="text-xs text-muted-foreground">
+                  {t("settings.ai.antigravity.connectedAt", {
+                    when: new Date(status.connectedAt).toLocaleString(),
+                  })}
+                </p>
+              )}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={testing || !status?.cliInstalled}
+            >
+              {testing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t("settings.ai.antigravity.testConnection")}
+            </Button>
+          </div>
+
+          {/* Capabilities */}
+          {status?.capabilities && (
+            <div>
+              <p className="font-medium mb-2">{t("settings.ai.antigravity.capabilities")}</p>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex items-center space-x-2">
+                  {status.capabilities.image ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-500" />
+                  )}
+                  <span>{t("settings.ai.antigravity.capabilityImages")}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  {status.capabilities.resourceBlob ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-500" />
+                  )}
+                  <span>{t("settings.ai.antigravity.capabilityPdfNative")}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <XCircle className="h-4 w-4 text-red-500" />
+                  <span>{t("settings.ai.antigravity.capabilityTools")}</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <XCircle className="h-4 w-4 text-red-500" />
+                  <span>{t("settings.ai.antigravity.capabilityAudio")}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Model Selection */}
+          {models && models.models.length > 0 && (
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="model">{t("settings.ai.antigravity.modelLabel")}</Label>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger id="model">
+                    <SelectValue placeholder={t("settings.ai.antigravity.modelPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {models.thinkingLevels.map((level) => (
-                      <SelectItem key={level} value={level}>
-                        {level}
+                    {models.models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
+              {models.thinkingLevels.length > 0 && (
+                <div>
+                  <Label htmlFor="thinking-level">
+                    {t("settings.ai.antigravity.thinkingLevelLabel")}
+                  </Label>
+                  <Select
+                    value={selectedThinkingLevel}
+                    onValueChange={setSelectedThinkingLevel}
+                  >
+                    <SelectTrigger id="thinking-level">
+                      <SelectValue
+                        placeholder={t("settings.ai.antigravity.thinkingLevelPlaceholder")}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.thinkingLevels.map((level) => (
+                        <SelectItem key={level} value={level}>
+                          {level}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Warning Notice */}
+          <div className="flex items-start space-x-2 rounded-lg bg-yellow-50 border border-yellow-200 p-3">
+            <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-yellow-900">
+                {t("settings.ai.antigravity.externalProcessingTitle")}
+              </p>
+              <p className="text-yellow-800">
+                {t("settings.ai.antigravity.externalProcessingBody")}
+              </p>
+            </div>
+          </div>
+
+          {/* Authentication Actions */}
+          <div className="flex space-x-2">
+            {status?.connectionStatus === "disconnected" ||
+            status?.connectionStatus === "auth_required" ? (
+              <Button onClick={handleAuthenticate} disabled={authenticating}>
+                {authenticating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {t("settings.ai.antigravity.connectButton")}
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={handleDisconnect}>
+                {t("settings.ai.antigravity.disconnectButton")}
+              </Button>
             )}
           </div>
-        )}
+        </CardContent>
+      </Card>
 
-        {/* Warning Notice */}
-        <div className="flex items-start space-x-2 rounded-lg bg-yellow-50 border border-yellow-200 p-3">
-          <AlertCircle className="h-5 w-5 text-yellow-600 shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="font-medium text-yellow-900">External Processing</p>
-            <p className="text-yellow-800">
-              The Antigravity CLI runs locally but sends data to Antigravity/Google services for
-              processing. See Antigravity's terms of service for data handling details.
-            </p>
+      {/* Authentication Instructions Dialog */}
+      <Dialog open={showAuthInstructions} onOpenChange={setShowAuthInstructions}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("settings.ai.antigravity.connectButton")}</DialogTitle>
+            <DialogDescription>{t("settings.ai.antigravity.description")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {authInstructions.map((line, index) => {
+              if (line.trim() === "") {
+                return <div key={index} className="h-2" />;
+              }
+              if (line.startsWith("   ")) {
+                return (
+                  <code
+                    key={index}
+                    className="block rounded bg-muted px-3 py-2 font-mono text-sm"
+                  >
+                    {line.trim()}
+                  </code>
+                );
+              }
+              return (
+                <p key={index} className="text-sm">
+                  {line}
+                </p>
+              );
+            })}
           </div>
-        </div>
-
-        {/* Authentication Actions */}
-        <div className="flex space-x-2">
-          {status?.connectionStatus === "disconnected" ||
-          status?.connectionStatus === "auth_required" ? (
-            <Button onClick={handleAuthenticate} disabled={authenticating}>
-              {authenticating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Connect Antigravity
+          <DialogFooter>
+            <Button onClick={() => setShowAuthInstructions(false)}>
+              {t("common.close")}
             </Button>
-          ) : (
-            <Button variant="outline" onClick={handleDisconnect}>
-              Disconnect
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

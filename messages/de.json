@@ -238,6 +238,44 @@
       },
       "budget": {
         "exceeded": "Das KI-Budget für heute ist aufgebraucht, daher wurde nichts gesendet. Morgen steht es wieder bereit."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Richten Sie Antigravity CLI (agy) als KI-Anbieter ein. Die CLI läuft lokal, sendet aber Daten an Antigravity/Google-Dienste.",
+        "connect": "Antigravity verbinden",
+        "follow_instructions": "Folgen Sie diesen Schritten zur Verbindung:",
+        "instructions": [
+          "Um die Antigravity-Einrichtung abzuschließen, müssen Sie sich bei Ihrem Antigravity-Konto authentifizieren:",
+          "",
+          "1. Führen Sie den folgenden Befehl in Ihrem Terminal aus:",
+          "   agy acp --login",
+          "",
+          "2. Ein Browserfenster öffnet sich für Ihre Anmeldung",
+          "3. Führen Sie den Authentifizierungsprozess aus",
+          "4. Kehren Sie zu HealthLog zurück und testen Sie die Verbindung"
+        ],
+        "disconnect": "Trennen",
+        "cli": "CLI",
+        "cli_status": {
+          "installed": "CLI-Installation",
+          "not_found": "Nicht gefunden",
+          "version": "Version {version}"
+        },
+        "connection_status": {
+          "disconnected": "Getrennt",
+          "connected": "Verbunden",
+          "auth_required": "Authentifizierung erforderlich",
+          "error": "Fehler",
+          "connected_at": "Verbunden: {date}"
+        },
+        "capabilities": {
+          "title": "Funktionen",
+          "image": "Bilder",
+          "pdf_native": "PDF (Native)",
+          "tools": "Tools",
+          "audio": "Audio"
+        },
+        "external_processing_warning": "Die Antigravity CLI läuft lokal, sendet aber Daten an Antigravity/Google-Dienste zur Verarbeitung. Weitere Informationen zur Datenverarbeitung finden Sie in den Nutzungsbedingungen von Antigravity."
       }
     },
     "passkey": {
@@ -6473,7 +6511,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Lokales Modell",
           "openai-compatible": "OpenAI-kompatibles Gateway",
-          "admin-openai": "Admin-OpenAI"
+          "admin-openai": "Admin-OpenAI",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Fallback-Kette",
         "description": "Fällt der aktive Anbieter aus, versucht HealthLog den nächsten eingeschalteten in dieser Reihenfolge.",
@@ -6497,7 +6536,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Lokales Modell (OpenAI-kompatibel)",
         "openai-compatible": "OpenAI-kompatibles Gateway",
-        "admin-openai": "Admin-OpenAI"
+        "admin-openai": "Admin-OpenAI",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "Ein vollwertiger Anbieter für jeden Endpunkt, der die OpenAI-API /v1/chat/completions spricht: LiteLLM, OpenRouter, vLLM oder ein anderes Gateway. Die Basis-URL endet auf /v1, der API-Key ist optional, und das Modell ist das, was dein Gateway weiterleitet. Dein OpenAI-Key erreicht diesen Endpunkt nie, dieser Anbieter hat einen eigenen.",
@@ -6534,6 +6574,33 @@
         "title": "Admin-OpenAI",
         "body": "Vom Betreiber bereitgestellter OpenAI-Key, genutzt als letzter Fallback ohne persönlichen Anbieter. Hier ist nichts einzustellen.",
         "notConfigured": "Der Betreiber hat keinen geteilten OpenAI-Key auf dieser Instanz konfiguriert."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Antigravity CLI (agy) als KI-Anbieter konfigurieren. Die CLI läuft lokal, sendet aber Daten an Antigravity/Google-Dienste.",
+        "cliInstallation": "CLI-Installation",
+        "cliVersion": "Version {version}",
+        "cliNotFound": "Nicht gefunden",
+        "connectionStatus": "Verbindungsstatus",
+        "statusDisconnected": "Getrennt",
+        "statusConnected": "Verbunden",
+        "statusAuthRequired": "Authentifizierung erforderlich",
+        "statusError": "Fehler",
+        "connectedAt": "Verbunden: {when}",
+        "testConnection": "Verbindung testen",
+        "capabilities": "Fähigkeiten",
+        "capabilityImages": "Bilder",
+        "capabilityPdfNative": "PDF (Nativ)",
+        "capabilityTools": "Tools",
+        "capabilityAudio": "Audio",
+        "modelLabel": "Modell",
+        "modelPlaceholder": "Modell auswählen",
+        "thinkingLevelLabel": "Denktiefe",
+        "thinkingLevelPlaceholder": "Denktiefe auswählen",
+        "externalProcessingTitle": "Externe Verarbeitung",
+        "externalProcessingBody": "Die Antigravity CLI läuft lokal, sendet aber Daten zur Verarbeitung an Antigravity/Google-Dienste. Weitere Informationen zum Umgang mit Daten finden Sie in den Nutzungsbedingungen von Antigravity.",
+        "connectButton": "Antigravity verbinden",
+        "disconnectButton": "Trennen"
       },
       "testProvider": "Aktiven Anbieter testen",
       "testSuccess": "OK: {provider} ({model})",

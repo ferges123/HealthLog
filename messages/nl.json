@@ -6473,7 +6473,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Lokaal model",
           "openai-compatible": "OpenAI-compatibele gateway",
-          "admin-openai": "OpenAI van beheerder"
+          "admin-openai": "OpenAI van beheerder",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Terugvalketen",
         "description": "Als de actieve provider faalt, probeert HealthLog de volgende ingeschakelde provider in deze volgorde.",
@@ -6497,7 +6498,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Lokaal model (OpenAI-compatibel)",
         "openai-compatible": "OpenAI-compatibele gateway",
-        "admin-openai": "OpenAI via beheerder"
+        "admin-openai": "OpenAI via beheerder",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "Een volwaardige provider voor elk endpoint dat de OpenAI-API /v1/chat/completions spreekt: LiteLLM, OpenRouter, vLLM of een andere gateway. De basis-URL eindigt op /v1, de API-sleutel is optioneel en het model is wat je gateway doorstuurt. Je OpenAI-sleutel bereikt dit endpoint nooit; deze provider heeft een eigen sleutel.",
@@ -6534,6 +6536,33 @@
         "title": "OpenAI van beheerder",
         "body": "OpenAI-sleutel van de serverbeheerder, gebruikt als laatste terugvaloptie als er geen persoonlijke provider is ingesteld. Hier valt niets in te stellen.",
         "notConfigured": "De beheerder heeft op deze instantie geen gedeelde OpenAI-sleutel ingesteld."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Antigravity CLI (agy) configureren als AI-provider. De CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-services.",
+        "cliInstallation": "CLI-installatie",
+        "cliVersion": "Versie {version}",
+        "cliNotFound": "Niet gevonden",
+        "connectionStatus": "Verbindingsstatus",
+        "statusDisconnected": "Verbroken",
+        "statusConnected": "Verbonden",
+        "statusAuthRequired": "Authenticatie vereist",
+        "statusError": "Fout",
+        "connectedAt": "Verbonden: {when}",
+        "testConnection": "Verbinding testen",
+        "capabilities": "Mogelijkheden",
+        "capabilityImages": "Afbeeldingen",
+        "capabilityPdfNative": "PDF (Natief)",
+        "capabilityTools": "Tools",
+        "capabilityAudio": "Audio",
+        "modelLabel": "Model",
+        "modelPlaceholder": "Selecteer een model",
+        "thinkingLevelLabel": "Denkniveau",
+        "thinkingLevelPlaceholder": "Selecteer denkniveau",
+        "externalProcessingTitle": "Externe verwerking",
+        "externalProcessingBody": "De Antigravity CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-services voor verwerking. Zie de servicevoorwaarden van Antigravity voor details over gegevensverwerking.",
+        "connectButton": "Antigravity verbinden",
+        "disconnectButton": "Verbreken"
       },
       "testProvider": "Actieve provider testen",
       "testSuccess": "OK: {provider} ({model})",

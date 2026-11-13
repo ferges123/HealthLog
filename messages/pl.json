@@ -6473,7 +6473,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Model lokalny",
           "openai-compatible": "Brama zgodna z OpenAI",
-          "admin-openai": "OpenAI administratora"
+          "admin-openai": "OpenAI administratora",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Łańcuch zapasowy",
         "description": "Gdy aktywny dostawca zawiedzie, HealthLog próbuje kolejnego włączonego w tej kolejności.",
@@ -6497,7 +6498,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Model lokalny (zgodny z OpenAI)",
         "openai-compatible": "Brama zgodna z OpenAI",
-        "admin-openai": "OpenAI udostępniony przez administratora"
+        "admin-openai": "OpenAI udostępniony przez administratora",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "Pełnoprawny dostawca dla każdego punktu końcowego mówiącego API /v1/chat/completions OpenAI: LiteLLM, OpenRouter, vLLM lub inna brama. Adres bazowy kończy się na /v1, klucz API jest opcjonalny, a model to ten, który kieruje twoja brama. Twój klucz OpenAI nigdy nie trafia do tego punktu końcowego, bo ten dostawca ma własny.",
@@ -6534,6 +6536,33 @@
         "title": "OpenAI administratora",
         "body": "Klucz OpenAI udostępniony przez operatora, używany jako ostateczność bez osobistego dostawcy. Nie ma tu nic do skonfigurowania.",
         "notConfigured": "Operator nie skonfigurował współdzielonego klucza OpenAI w tej instancji."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Skonfiguruj Antigravity CLI (agy) jako dostawcę AI. CLI działa lokalnie, ale wysyła dane do usług Antigravity/Google.",
+        "cliInstallation": "Instalacja CLI",
+        "cliVersion": "Wersja {version}",
+        "cliNotFound": "Nie znaleziono",
+        "connectionStatus": "Stan połączenia",
+        "statusDisconnected": "Rozłączono",
+        "statusConnected": "Połączono",
+        "statusAuthRequired": "Wymagana autoryzacja",
+        "statusError": "Błąd",
+        "connectedAt": "Połączono: {when}",
+        "testConnection": "Testuj połączenie",
+        "capabilities": "Możliwości",
+        "capabilityImages": "Obrazy",
+        "capabilityPdfNative": "PDF (Natywny)",
+        "capabilityTools": "Narzędzia",
+        "capabilityAudio": "Audio",
+        "modelLabel": "Model",
+        "modelPlaceholder": "Wybierz model",
+        "thinkingLevelLabel": "Poziom myślenia",
+        "thinkingLevelPlaceholder": "Wybierz poziom myślenia",
+        "externalProcessingTitle": "Przetwarzanie zewnętrzne",
+        "externalProcessingBody": "Antigravity CLI działa lokalnie, ale wysyła dane do usług Antigravity/Google w celu przetworzenia. Zapoznaj się z warunkami korzystania z usług Antigravity, aby uzyskać szczegółowe informacje na temat obsługi danych.",
+        "connectButton": "Połącz Antigravity",
+        "disconnectButton": "Rozłącz"
       },
       "testProvider": "Przetestuj aktywnego dostawcę",
       "testSuccess": "OK: {provider} ({model})",

@@ -238,6 +238,44 @@
       },
       "budget": {
         "exceeded": "Today's AI budget is used up, so nothing was sent. It renews tomorrow."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configure Antigravity CLI (agy) as an AI provider. The CLI runs locally but sends data to Antigravity/Google services.",
+        "connect": "Connect Antigravity",
+        "follow_instructions": "Follow these steps to connect:",
+        "instructions": [
+          "To complete Antigravity setup, you need to authenticate with your Antigravity account:",
+          "",
+          "1. Run the following command in your terminal:",
+          "   agy acp --login",
+          "",
+          "2. A browser window will open for you to sign in",
+          "3. Complete the authentication flow",
+          "4. Return to HealthLog and test the connection"
+        ],
+        "disconnect": "Disconnect",
+        "cli": "CLI",
+        "cli_status": {
+          "installed": "CLI Installation",
+          "not_found": "Not found",
+          "version": "Version {version}"
+        },
+        "connection_status": {
+          "disconnected": "Disconnected",
+          "connected": "Connected",
+          "auth_required": "Authentication Required",
+          "error": "Error",
+          "connected_at": "Connected: {date}"
+        },
+        "capabilities": {
+          "title": "Capabilities",
+          "image": "Images",
+          "pdf_native": "PDF (Native)",
+          "tools": "Tools",
+          "audio": "Audio"
+        },
+        "external_processing_warning": "The Antigravity CLI runs locally but sends data to Antigravity/Google services for processing. See Antigravity's terms of service for data handling details."
       }
     },
     "passkey": {
@@ -6473,7 +6511,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Local model",
           "openai-compatible": "OpenAI-compatible gateway",
-          "admin-openai": "Admin OpenAI"
+          "admin-openai": "Admin OpenAI",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Fallback chain",
         "description": "If the active provider fails, HealthLog tries the next enabled one in this order.",
@@ -6497,7 +6536,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Local model (OpenAI-compatible)",
         "openai-compatible": "OpenAI-compatible gateway",
-        "admin-openai": "Admin-provided OpenAI"
+        "admin-openai": "Admin-provided OpenAI",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "A first-class provider for any endpoint that speaks the OpenAI /v1/chat/completions API: LiteLLM, OpenRouter, vLLM or another gateway. The base URL ends with /v1, the API key is optional, and the model is whatever your gateway routes. Your OpenAI key never reaches this endpoint; this provider has its own.",
@@ -6534,6 +6574,33 @@
         "title": "Admin OpenAI",
         "body": "Operator-provided OpenAI key, used as the last fallback when no personal provider is configured. Nothing to configure here.",
         "notConfigured": "The operator has not configured a shared OpenAI key on this instance."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configure Antigravity CLI (agy) as an AI provider. The CLI runs locally but sends data to Antigravity/Google services.",
+        "cliInstallation": "CLI Installation",
+        "cliVersion": "Version {version}",
+        "cliNotFound": "Not found",
+        "connectionStatus": "Connection Status",
+        "statusDisconnected": "Disconnected",
+        "statusConnected": "Connected",
+        "statusAuthRequired": "Authentication Required",
+        "statusError": "Error",
+        "connectedAt": "Connected: {when}",
+        "testConnection": "Test Connection",
+        "capabilities": "Capabilities",
+        "capabilityImages": "Images",
+        "capabilityPdfNative": "PDF (Native)",
+        "capabilityTools": "Tools",
+        "capabilityAudio": "Audio",
+        "modelLabel": "Model",
+        "modelPlaceholder": "Select a model",
+        "thinkingLevelLabel": "Thinking Level",
+        "thinkingLevelPlaceholder": "Select thinking level",
+        "externalProcessingTitle": "External Processing",
+        "externalProcessingBody": "The Antigravity CLI runs locally but sends data to Antigravity/Google services for processing. See Antigravity's terms of service for data handling details.",
+        "connectButton": "Connect Antigravity",
+        "disconnectButton": "Disconnect"
       },
       "testProvider": "Test active provider",
       "testSuccess": "OK: {provider} ({model})",

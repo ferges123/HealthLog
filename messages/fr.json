@@ -6473,7 +6473,8 @@
           "anthropic": "Anthropic (Claude)",
           "local": "Modèle local",
           "openai-compatible": "Passerelle compatible OpenAI",
-          "admin-openai": "OpenAI administrateur"
+          "admin-openai": "OpenAI administrateur",
+          "antigravity": "Antigravity CLI"
         },
         "title": "Chaîne de secours",
         "description": "Si le fournisseur actif échoue, HealthLog essaie le suivant activé, dans cet ordre.",
@@ -6497,7 +6498,8 @@
         "anthropic": "Anthropic (Claude)",
         "local": "Modèle local (compatible OpenAI)",
         "openai-compatible": "Passerelle compatible OpenAI",
-        "admin-openai": "OpenAI fourni par l’administrateur"
+        "admin-openai": "OpenAI fourni par l'administrateur",
+        "antigravity": "Antigravity CLI (agy)"
       },
       "compat": {
         "description": "Un fournisseur à part entière pour tout point de terminaison qui parle l'API /v1/chat/completions d'OpenAI : LiteLLM, OpenRouter, vLLM ou une autre passerelle. L'URL de base se termine par /v1, la clé API est facultative et le modèle est celui que votre passerelle achemine. Votre clé OpenAI n'atteint jamais ce point de terminaison : ce fournisseur a la sienne.",
@@ -6532,8 +6534,35 @@
       },
       "adminOpenai": {
         "title": "OpenAI administrateur",
-        "body": "Clé OpenAI fournie par l’opérateur, utilisée en dernier recours sans fournisseur personnel. Rien à configurer ici.",
-        "notConfigured": "L’opérateur n’a pas configuré de clé OpenAI partagée sur cette instance."
+        "body": "Clé OpenAI fournie par l'opérateur, utilisée en dernier recours sans fournisseur personnel. Rien à configurer ici.",
+        "notConfigured": "L'opérateur n'a pas configuré de clé OpenAI partagée sur cette instance."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configurer Antigravity CLI (agy) comme fournisseur d'IA. La CLI s'exécute localement mais envoie des données aux services Antigravity/Google.",
+        "cliInstallation": "Installation de la CLI",
+        "cliVersion": "Version {version}",
+        "cliNotFound": "Introuvable",
+        "connectionStatus": "État de la connexion",
+        "statusDisconnected": "Déconnecté",
+        "statusConnected": "Connecté",
+        "statusAuthRequired": "Authentification requise",
+        "statusError": "Erreur",
+        "connectedAt": "Connecté\u00a0: {when}",
+        "testConnection": "Tester la connexion",
+        "capabilities": "Capacités",
+        "capabilityImages": "Images",
+        "capabilityPdfNative": "PDF (Natif)",
+        "capabilityTools": "Outils",
+        "capabilityAudio": "Audio",
+        "modelLabel": "Modèle",
+        "modelPlaceholder": "Sélectionner un modèle",
+        "thinkingLevelLabel": "Niveau de réflexion",
+        "thinkingLevelPlaceholder": "Sélectionner le niveau de réflexion",
+        "externalProcessingTitle": "Traitement externe",
+        "externalProcessingBody": "La CLI Antigravity s'exécute localement mais envoie des données aux services Antigravity/Google pour traitement. Consultez les conditions d'utilisation d'Antigravity pour plus de détails sur la gestion des données.",
+        "connectButton": "Connecter Antigravity",
+        "disconnectButton": "Déconnecter"
       },
       "testProvider": "Tester le fournisseur actif",
       "testSuccess": "OK : {provider} ({model})",
