@@ -217,8 +217,8 @@ From `session/new` configOptions:
 ## Next Steps
 
 1. ✅ Commit this document
-2. ➡️ **Stage 2**: Implement `AntigravityClient` and provider registration
-3. ⏳ **Stage 3**: Fix image format, verify PDF, implement multimodal
+2. ✅ **Stage 2**: Implement `AntigravityClient` and provider registration
+3. ➡️ **Stage 3**: Fix image format, verify PDF, implement multimodal
 4. ⏳ **Stage 4**: UI, settings, API routes
 5. ⏳ **Stage 5**: Docker, profile isolation with --app-data-dir
 6. ⏳ **Stage 6**: Tests, docs, PR

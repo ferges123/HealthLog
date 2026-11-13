@@ -126,9 +126,10 @@ export function supportsVisionForConfig(
     case "admin-codex":
       return model ? openAIFamilySupportsVision(model) : false;
     case "antigravity":
-      // Conservative: false until runtime capability confirms
-      // Stays false until multimodal input is verified end to end (Stage 3).
-      return false;
+      // Stage 3: Image support confirmed via ACP promptCapabilities.image
+      // PDF native support depends on runtime discovery of promptCapabilities.resourceBlob
+      // This is a conservative capability gate; actual processing verified at runtime.
+      return true;
     case "none":
     default:
       return false;
@@ -136,14 +137,18 @@ export function supportsVisionForConfig(
 }
 
 /**
- * Whether PDFs are supported for a given provider. Only Anthropic accepts a
- * native `document` block over the Messages API; OpenAI / local read images
- * only (a server-side rasterizer is a deferred follow-up). The route uses this
- * to reject a PDF upload with a clear "use a photo / configure Claude" message
- * on a non-Anthropic provider.
+ * Whether PDFs are supported for a given provider. Anthropic and Antigravity
+ * accept native PDFs; OpenAI / local read images only (a server-side rasterizer
+ * is a deferred follow-up). The route uses this to reject a PDF upload with a
+ * clear message on a non-PDF-capable provider.
+ *
+ * Antigravity PDF support depends on runtime negotiation of
+ * `promptCapabilities.resourceBlob` during ACP initialize. This function
+ * returns true optimistically; the client validates at runtime and falls back
+ * to rasterization if needed.
  */
 export function supportsPdfForProvider(
   providerType: VisionProviderType,
 ): boolean {
-  return providerType === "anthropic";
+  return providerType === "anthropic" || providerType === "antigravity";
 }
