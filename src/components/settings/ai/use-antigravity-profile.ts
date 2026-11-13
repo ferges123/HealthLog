@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 
 import { toastWrittenOutcome } from "@/components/outcome/outcome-toast";
-import { apiGet, apiPatch, apiPost } from "@/lib/api/api-fetch";
+import { apiGet, apiPatch, apiPost, apiPut } from "@/lib/api/api-fetch";
 import { localizedApiError } from "@/lib/api/localized-error";
 import { useTranslations } from "@/lib/i18n/context";
 import type { AntigravityStatusResponse } from "@/app/api/antigravity/status/route";
@@ -20,6 +20,40 @@ import type {
   AntigravityModelsResponse,
 } from "@/app/api/antigravity/models/route";
 import type { AntigravityModelResponse } from "@/app/api/antigravity/model/route";
+import type { ProviderChainData } from "./shared";
+
+type ChainEntry = { providerType: string; enabled: boolean };
+
+/** Add antigravity to the front of the provider chain (idempotent). */
+async function addAntigravityToChain() {
+  const chain = await apiGet<ProviderChainData>(
+    "/api/insights/provider-chain",
+  );
+  const entries: ChainEntry[] = chain.configuredChain.map((e) => ({
+    providerType: e.providerType,
+    enabled: e.enabled,
+  }));
+  if (!entries.some((e) => e.providerType === "antigravity")) {
+    entries.unshift({ providerType: "antigravity", enabled: true });
+  } else {
+    // Already present — just make sure it's enabled.
+    for (const e of entries) {
+      if (e.providerType === "antigravity") e.enabled = true;
+    }
+  }
+  await apiPut("/api/insights/provider-chain", { chain: entries });
+}
+
+/** Remove antigravity from the provider chain. */
+async function removeAntigravityFromChain() {
+  const chain = await apiGet<ProviderChainData>(
+    "/api/insights/provider-chain",
+  );
+  const entries: ChainEntry[] = chain.configuredChain
+    .filter((e) => e.providerType !== "antigravity")
+    .map((e) => ({ providerType: e.providerType, enabled: e.enabled }));
+  await apiPut("/api/insights/provider-chain", { chain: entries });
+}
 
 type Busy = "connect" | "test" | "disconnect" | "model";
 type Translate = ReturnType<typeof useTranslations>["t"];
@@ -129,7 +163,7 @@ export function useAntigravityProfile(callbacks?: {
       const result = await apiPost<AntigravityAuthenticateResponse>(
         "/api/antigravity/authenticate",
       );
-      await apiPatch("/api/user/ai-provider", { provider: "ANTIGRAVITY_CLI" });
+      await addAntigravityToChain();
       callbacks?.onProviderChanged?.();
       setStepsVariant("connect");
       setSteps(result.instructions);
@@ -156,7 +190,7 @@ export function useAntigravityProfile(callbacks?: {
       const result = await apiPost<AntigravityDisconnectResponse>(
         "/api/antigravity/disconnect",
       );
-      await apiPatch("/api/user/ai-provider", { provider: null });
+      await removeAntigravityFromChain();
       callbacks?.onProviderChanged?.();
       setStepsVariant("disconnect");
       setSteps(result.instructions);
