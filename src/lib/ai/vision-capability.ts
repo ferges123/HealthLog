@@ -100,10 +100,9 @@ export type VisionProviderType =
  *                           multimodal model (GPT-5.x, gpt-6, gpt-4o-class). Image
  *                           input rides the ChatGPT plan — no API key. A
  *                           non-multimodal slug (or unknown) → false.
- *  - antigravity          → conservative false until capability discovery
- *                           confirms image support at runtime. ACP reports
- *                           promptCapabilities.image, but we gate here until
- *                           Stage 3 completes multimodal verification.
+ *  - antigravity          → false. The CLI reports image support in its ACP
+ *                           initialize result, but no route sends images to it
+ *                           yet, so this stays off.
  *  - none                 → false (nothing configured).
  */
 export function supportsVisionForConfig(
@@ -126,9 +125,8 @@ export function supportsVisionForConfig(
     case "admin-codex":
       return model ? openAIFamilySupportsVision(model) : false;
     case "antigravity":
-      // Conservative false until capability discovery via ACP promptCapabilities.image
-      // At runtime, the AntigravityClient checks promptCapabilities and fails with
-      // PROMPT_FAILED if the provider reports no image support.
+      // Off until a route sends images to Antigravity. The client checks the
+      // CLI's promptCapabilities.image before it sends one.
       return false;
     case "none":
     default:
@@ -142,10 +140,11 @@ export function supportsVisionForConfig(
  * is a deferred follow-up). The route uses this to reject a PDF upload with a
  * clear message on a non-PDF-capable provider.
  *
- * Antigravity PDF support depends on runtime negotiation of
- * `promptCapabilities.resourceBlob` during ACP initialize. This function
- * returns true optimistically; the client validates at runtime and falls back
- * to rasterization if needed.
+ * Antigravity accepts a PDF only when the CLI reports
+ * `agentCapabilities.promptCapabilities.embeddedContext` during ACP initialize.
+ * This function returns true without that check. The client then refuses the
+ * PDF with PROMPT_FAILED if the CLI does not report it. Nothing rasterizes the
+ * PDF as a fallback.
  */
 export function supportsPdfForProvider(
   providerType: VisionProviderType,

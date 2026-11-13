@@ -11,7 +11,7 @@ import { chainEntryReadsImages } from "./codex-slug-chain";
 import { OpenAIClient } from "./openai-client";
 import { AnthropicClient } from "./anthropic-client";
 import { LocalOpenAICompatibleClient } from "./local-client";
-import { antigravityProfileDir } from "./antigravity-client";
+import { antigravityAvailable } from "./antigravity-client";
 import {
   refreshDeviceTokens,
   codexReconnectRequired,
@@ -835,6 +835,7 @@ export async function resolveProviderChain(
       aiCompatKeyEncrypted: true,
       aiCompatModel: true,
       antigravityProfileId: true,
+      antigravityModel: true,
       role: true,
       aiProviderChain: true,
       useCentralCodex: true,
@@ -1127,15 +1128,11 @@ export function probeProviderChain(
             );
           case "admin-openai":
             return adminKey;
-          case "antigravity": {
-            // v1.48.0 — Antigravity CLI provider. Credentials stay in the CLI's own
-            // profile directory, never in the DB. Without a profile for this user the
-            // CLI would run under the server's shared login, so the provider stays off.
-            const profileId = row.antigravityProfileId;
-            if (!profileId) return false;
-            const profileDir = antigravityProfileDir(profileId);
-            return profileDir !== null;
-          }
+          case "antigravity":
+            // Credentials stay in the CLI's profile folder, never in the DB.
+            // Without a profile for this user the CLI would run under the
+            // server's shared login, so the provider stays off.
+            return antigravityAvailable(row.antigravityProfileId);
           default:
             // `admin-codex` is never resolved from a stored chain entry.
             return false;
@@ -1213,6 +1210,7 @@ async function resolveProviderForType(
       aiCompatKeyEncrypted: string | null;
       aiCompatModel: string | null;
       antigravityProfileId: string | null;
+      antigravityModel: string | null;
       role: string;
     } | null;
     policy: ProviderCredentialPolicy;
@@ -1278,16 +1276,12 @@ async function resolveProviderForType(
       // hand-crafted `admin-codex` chain entry from bypassing that gate.
       return null;
     case "antigravity": {
-      // v1.48.0 — Antigravity CLI provider. Credentials stay in the CLI's own
-      // profile directory, never in the DB. Without a profile for this user the
-      // CLI would run under the server's shared login, so the provider stays off.
+      // Credentials stay in the CLI's profile folder, never in the DB. Without
+      // a profile for this user the CLI would run under the shared login, so
+      // no client is built.
       if (!ctx.userRow) return null;
-      const profileId = ctx.userRow.antigravityProfileId;
-      if (!profileId) return null;
-      const profileDir = antigravityProfileDir(profileId);
-      if (!profileDir) return null;
-      const { AntigravityClient } = await import("./antigravity-client");
-      return new AntigravityClient({ profileDir });
+      const { antigravityProviderFor } = await import("./antigravity-client");
+      return antigravityProviderFor(ctx.userRow);
     }
     default:
       return null;

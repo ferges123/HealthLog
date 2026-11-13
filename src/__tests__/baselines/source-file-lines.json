@@ -30,7 +30,7 @@
     "lib/ai/coach/types.ts": 1008,
     "lib/ai/codex-client.ts": 907,
     "lib/ai/prompts/insight-generator.ts": 1115,
-    "lib/ai/provider.ts": 1497,
+    "lib/ai/provider.ts": 1517,
     "lib/analytics/score/reader.ts": 998,
     "lib/analytics/sleep-night.ts": 1345,
     "lib/analytics/summaries-slice.ts": 1178,

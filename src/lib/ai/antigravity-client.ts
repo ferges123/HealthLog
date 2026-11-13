@@ -8,20 +8,32 @@
  * Guarantees:
  * - The child runs in an empty temporary workspace, deleted when the call ends.
  * - The child gets an allowlisted environment only, so app secrets stay out.
- * - The child runs under the profile directory the caller passes in
- *   (`profileDir`, `--app-data-dir`). It never uses the server's default login.
+ * - The child runs with `--gemini-dir` set to the operator's profile root and
+ *   `--app-data-dir` set to the user's profile id. Without `--gemini-dir` the
+ *   CLI keeps its state under $HOME/.gemini, which every user would share.
  * - The agent gets no MCP servers and no fs or terminal capabilities.
  * - Every permission request from the agent is refused.
+ *
+ * Checked against agy 1.5.8: the flags, the `initialize` shape and the
+ * "Authentication required" error on a fresh profile. A real Google login and
+ * a real prompt have not been run end to end yet.
  *
  * @see docs/antigravity-cli-architecture.md
  * @see docs/antigravity-cli-transport-decision.md
  */
 
-import { spawn, type ChildProcess } from "child_process";
 import { existsSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { isAbsolute, join } from "path";
-import { StringDecoder } from "string_decoder";
+import { AcpConnection, type JsonRpcResponse } from "./antigravity-acp";
+import { ANTIGRAVITY_ERRORS, AntigravityError } from "./antigravity-errors";
+
+export {
+  ANTIGRAVITY_ERRORS,
+  AntigravityError,
+  antigravityReasonOf,
+  type AntigravityFailureReason,
+} from "./antigravity-errors";
 import type {
   AIProvider,
   AiContentPart,
@@ -30,30 +42,6 @@ import type {
   CompletionResult,
   ProviderType,
 } from "./types";
-
-// ─── Errors ──────────────────────────────────────────────────
-
-export const ANTIGRAVITY_ERRORS = {
-  CLI_UNAVAILABLE: "cli_unavailable",
-  AUTH_REQUIRED: "auth_required",
-  SESSION_FAILED: "session_failed",
-  PROMPT_FAILED: "prompt_failed",
-  QUOTA_EXCEEDED: "quota_exceeded",
-  CANCELLED: "cancelled",
-  TIMEOUT: "timeout",
-  PROCESS_ERROR: "process_error",
-} as const;
-
-export class AntigravityError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly originalError?: unknown,
-  ) {
-    super(message);
-    this.name = "AntigravityError";
-  }
-}
 
 // ─── Constants ───────────────────────────────────────────────
 
@@ -79,9 +67,6 @@ const CHILD_ENV_ALLOWLIST = [
 const PROTOCOL_VERSION = 1;
 const SETUP_TIMEOUT_MS = 30_000;
 const DEFAULT_PROMPT_TIMEOUT_MS = 60_000;
-const KILL_GRACE_MS = 2_000;
-/** Upper bound on one unparsed line. A runaway agent cannot grow memory without limit. */
-const MAX_BUFFER_CHARS = 16 * 1024 * 1024;
 
 const ROLE_LABEL: Record<AiMessage["role"], string> = {
   user: "User",
@@ -105,55 +90,125 @@ const ROLE_LABEL: Record<AiMessage["role"], string> = {
  */
 export function antigravityProfileDir(profileId: string): string | null {
   const root = process.env[PROFILE_ROOT_ENV];
-  if (!root || !isAbsolute(root) || !USER_ID_PATTERN.test(profileId)) return null;
+  if (!root || !isAbsolute(root) || !USER_ID_PATTERN.test(profileId))
+    return null;
   const dir = join(root, profileId);
   return existsSync(dir) ? dir : null;
 }
 
-// ─── ACP wire types ──────────────────────────────────────────
-
-interface JsonRpcError {
-  code: number;
-  message: string;
+/**
+ * Where the CLI keeps one user's state, as the two flags that select it.
+ * `geminiDir` is the operator's absolute profile root. `appDataDir` is the
+ * profile id, a relative name under that root. The CLI rejects an absolute
+ * `--app-data-dir`, and it puts state at `<geminiDir>/<appDataDir>`.
+ */
+export interface AntigravityProfileLocation {
+  geminiDir: string;
+  appDataDir: string;
 }
 
-interface JsonRpcResponse {
-  id: number | string;
-  result?: unknown;
-  error?: JsonRpcError;
-}
-
-interface JsonRpcMessage {
-  id?: number | string;
-  method?: string;
-  params?: unknown;
-  result?: unknown;
-  error?: JsonRpcError;
-}
-
-interface AcpInitializeResult {
-  agentInfo?: { name?: string };
-  capabilities?: {
-    promptCapabilities?: { image?: boolean; resourceBlob?: boolean };
+/** The location for this user, or null when the profile does not exist yet. */
+export function antigravityProfileLocation(
+  profileId: string,
+): AntigravityProfileLocation | null {
+  if (antigravityProfileDir(profileId) === null) return null;
+  return {
+    geminiDir: process.env[PROFILE_ROOT_ENV] as string,
+    appDataDir: profileId,
   };
 }
 
+// ─── ACP wire types ──────────────────────────────────────────
+
+interface AcpInitializeResult {
+  agentInfo?: { name?: string };
+  /** The CLI reports prompt support here. `embeddedContext` covers embedded resources such as PDFs. */
+  agentCapabilities?: {
+    promptCapabilities?: {
+      image?: boolean;
+      audio?: boolean;
+      embeddedContext?: boolean;
+    };
+  };
+}
+
+/** Prompt input the CLI accepts, as negotiated in `initialize`. */
+export type AntigravityPromptCapabilities = {
+  image: boolean;
+  embeddedContext: boolean;
+};
+
 interface AcpSessionNewResult {
   sessionId?: string;
+  configOptions?: unknown;
+}
+
+/** One model the CLI offers in a profile. */
+export interface AntigravityModel {
+  id: string;
+  name: string;
+}
+
+/** The model selector from a session's `configOptions`. */
+export interface AntigravityModelOptions {
+  /** The `configId` that `session/set_config_option` takes. */
+  configId: string;
+  models: AntigravityModel[];
+  /** The model the CLI uses when none is selected. */
+  currentModel: string | null;
+}
+
+/**
+ * Read the model selector out of a session's `configOptions`. The option is
+ * the one with category `model` (or id `model`) and type `select`. Grouped
+ * option lists are flattened. Null when the CLI offers no model selector.
+ */
+export function modelOptionsOf(
+  configOptions: unknown,
+): AntigravityModelOptions | null {
+  if (!Array.isArray(configOptions)) return null;
+  const option = configOptions.find(
+    (o): o is Record<string, unknown> =>
+      typeof o === "object" &&
+      o !== null &&
+      ((o as { category?: unknown }).category === "model" ||
+        (o as { id?: unknown }).id === "model") &&
+      (o as { type?: unknown }).type === "select",
+  );
+  if (!option || typeof option.id !== "string") return null;
+  if (!Array.isArray(option.options)) return null;
+
+  const entries: unknown[] = [];
+  for (const entry of option.options as unknown[]) {
+    if (typeof entry === "object" && entry !== null && "options" in entry) {
+      const group = (entry as { options?: unknown }).options;
+      if (Array.isArray(group)) entries.push(...group);
+    } else {
+      entries.push(entry);
+    }
+  }
+
+  const models: AntigravityModel[] = [];
+  for (const entry of entries) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const { value, name } = entry as { value?: unknown; name?: unknown };
+    if (typeof value !== "string" || value.length === 0) continue;
+    models.push({
+      id: value,
+      name: typeof name === "string" && name.length > 0 ? name : value,
+    });
+  }
+
+  return {
+    configId: option.id,
+    models,
+    currentModel:
+      typeof option.currentValue === "string" ? option.currentValue : null,
+  };
 }
 
 interface AcpPromptResult {
   stopReason?: string;
-}
-
-interface AcpSessionUpdate {
-  sessionUpdate: string;
-  content?: { type?: string; text?: string };
-}
-
-interface AcpPermissionOption {
-  optionId: string;
-  kind: string;
 }
 
 type AcpPromptBlock =
@@ -164,246 +219,10 @@ type AcpPromptBlock =
       resource: { uri: string; mimeType: string; blob: string };
     };
 
-// ─── One child process and its JSON-RPC connection ───────────
-
-interface PendingCall {
-  resolve: (response: JsonRpcResponse) => void;
-  reject: (error: AntigravityError) => void;
-  timer: ReturnType<typeof setTimeout>;
-}
-
-class AcpConnection {
-  private readonly decoder = new StringDecoder("utf8");
-  private buffer = "";
-  private nextId = 1;
-  private readonly pending = new Map<number | string, PendingCall>();
-  private failure: AntigravityError | null = null;
-  private readonly exited: Promise<void>;
-
-  /** Receives each `session/update` notification from the agent. */
-  onSessionUpdate: (update: AcpSessionUpdate) => void = () => {};
-
-  private constructor(private readonly child: ChildProcess) {
-    this.exited = new Promise<void>((resolve) => {
-      child.on("exit", () => resolve());
-    });
-    child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
-    // stderr can carry user data or secrets. Drain it and never log it.
-    child.stderr?.resume();
-    child.stdin?.on("error", () =>
-      this.fail(
-        new AntigravityError(
-          "agy stdin closed",
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-        ),
-      ),
-    );
-    child.on("error", (err) =>
-      this.fail(
-        new AntigravityError(
-          "agy process error",
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-          err,
-        ),
-      ),
-    );
-    child.on("exit", (code, signal) =>
-      this.fail(
-        new AntigravityError(
-          `agy exited (code ${code}, signal ${signal})`,
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-        ),
-      ),
-    );
-  }
-
-  /** Spawn `agy` and resolve once the process has started. */
-  static start(
-    args: string[],
-    options: { cwd: string; env: NodeJS.ProcessEnv },
-  ): Promise<AcpConnection> {
-    return new Promise((resolve, reject) => {
-      let child: ChildProcess;
-      try {
-        child = spawn("agy", args, {
-          cwd: options.cwd,
-          env: options.env,
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-      } catch (err) {
-        reject(
-          new AntigravityError(
-            "Failed to start agy",
-            ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
-            err,
-          ),
-        );
-        return;
-      }
-      let started = false;
-      child.on("spawn", () => {
-        started = true;
-        resolve(new AcpConnection(child));
-      });
-      child.on("error", (err) => {
-        if (!started) {
-          reject(
-            new AntigravityError(
-              "Failed to start agy",
-              ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
-              err,
-            ),
-          );
-        }
-      });
-    });
-  }
-
-  /**
-   * Send a request and wait for its response. Rejects on timeout or when the
-   * connection fails. A JSON-RPC error in the response is returned, not thrown.
-   */
-  call(
-    method: string,
-    params: unknown,
-    timeoutMs: number,
-  ): Promise<JsonRpcResponse> {
-    if (this.failure) return Promise.reject(this.failure);
-    const id = this.nextId++;
-    return new Promise<JsonRpcResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(
-          new AntigravityError(
-            `${method} timed out after ${timeoutMs} ms`,
-            ANTIGRAVITY_ERRORS.TIMEOUT,
-          ),
-        );
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer });
-      this.write({ jsonrpc: "2.0", id, method, params });
-    });
-  }
-
-  /** Stop the process: SIGTERM, then SIGKILL after a grace period. */
-  async close(): Promise<void> {
-    this.fail(
-      new AntigravityError(
-        "agy connection closed",
-        ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-      ),
-    );
-    const child = this.child;
-    if (
-      child.pid === undefined ||
-      child.exitCode !== null ||
-      child.signalCode !== null
-    ) {
-      return;
-    }
-    const killTimer = setTimeout(() => child.kill("SIGKILL"), KILL_GRACE_MS);
-    killTimer.unref();
-    child.kill("SIGTERM");
-    await this.exited;
-    clearTimeout(killTimer);
-  }
-
-  private write(message: object): void {
-    this.child.stdin?.write(JSON.stringify(message) + "\n");
-  }
-
-  private fail(error: AntigravityError): void {
-    if (this.failure) return;
-    this.failure = error;
-    for (const [id, call] of this.pending) {
-      this.pending.delete(id);
-      clearTimeout(call.timer);
-      call.reject(error);
-    }
-  }
-
-  private onData(chunk: Buffer): void {
-    // StringDecoder keeps a multi-byte character that is split across chunks
-    // intact (Polish letters are two bytes in UTF-8).
-    this.buffer += this.decoder.write(chunk);
-    if (this.buffer.length > MAX_BUFFER_CHARS) {
-      this.fail(
-        new AntigravityError(
-          "agy sent an oversized message",
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-        ),
-      );
-      return;
-    }
-    let newline = this.buffer.indexOf("\n");
-    while (newline !== -1) {
-      const line = this.buffer.slice(0, newline).trim();
-      this.buffer = this.buffer.slice(newline + 1);
-      if (line) this.onLine(line);
-      newline = this.buffer.indexOf("\n");
-    }
-  }
-
-  private onLine(line: string): void {
-    let msg: JsonRpcMessage;
-    try {
-      msg = JSON.parse(line) as JsonRpcMessage;
-    } catch {
-      // Not logged: the line may contain user data.
-      return;
-    }
-    if (!msg || typeof msg !== "object") return;
-
-    if (typeof msg.method === "string") {
-      if (msg.id !== undefined) {
-        // A request from the agent. It must be answered under the same id.
-        this.onAgentRequest(msg.id, msg.method, msg.params);
-      } else if (msg.method === "session/update") {
-        const update = (msg.params as { update?: AcpSessionUpdate } | undefined)
-          ?.update;
-        if (update) this.onSessionUpdate(update);
-      }
-      return;
-    }
-
-    if (msg.id !== undefined) {
-      const call = this.pending.get(msg.id);
-      if (!call) return;
-      this.pending.delete(msg.id);
-      clearTimeout(call.timer);
-      call.resolve({ id: msg.id, result: msg.result, error: msg.error });
-    }
-  }
-
-  private onAgentRequest(
-    id: number | string,
-    method: string,
-    params: unknown,
-  ): void {
-    if (method === "session/request_permission") {
-      // HealthLog grants no permissions. Choose a reject-once option when the
-      // agent offers one. Otherwise answer "cancelled".
-      const options =
-        (params as { options?: AcpPermissionOption[] } | undefined)?.options ??
-        [];
-      const reject = options.find((o) => o.kind === "reject_once");
-      const outcome = reject
-        ? { outcome: "selected", optionId: reject.optionId }
-        : { outcome: "cancelled" };
-      this.write({ jsonrpc: "2.0", id, result: { outcome } });
-      return;
-    }
-    this.write({
-      jsonrpc: "2.0",
-      id,
-      error: { code: -32601, message: `Method not supported: ${method}` },
-    });
-  }
-}
-
 // ─── Request helpers ─────────────────────────────────────────
 
-function childEnv(): NodeJS.ProcessEnv {
+/** The environment every `agy` child runs with. Only allowlisted variables pass. */
+export function antigravityChildEnv(): NodeJS.ProcessEnv {
   // The project's ProcessEnv type requires NODE_ENV. The allowlist fills the rest.
   const env = {} as NodeJS.ProcessEnv;
   for (const key of CHILD_ENV_ALLOWLIST) {
@@ -411,6 +230,37 @@ function childEnv(): NodeJS.ProcessEnv {
     if (value !== undefined) env[key] = value;
   }
   return env;
+}
+
+/** Arguments that start the ACP server for one user's profile. */
+function acpArgs(profile: AntigravityProfileLocation): string[] {
+  return [
+    "acp",
+    "--sandbox",
+    "--disable-telemetry",
+    "--gemini-dir",
+    profile.geminiDir,
+    "--app-data-dir",
+    profile.appDataDir,
+  ];
+}
+
+function initializeParams() {
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    clientInfo: { name: "HealthLog", version: "1.0.0" },
+  };
+}
+
+/** Read the prompt capabilities out of an `initialize` result. Missing means unsupported. */
+function promptCapabilitiesOf(
+  init: AcpInitializeResult | undefined,
+): AntigravityPromptCapabilities {
+  const caps = init?.agentCapabilities?.promptCapabilities;
+  return {
+    image: caps?.image === true,
+    embeddedContext: caps?.embeddedContext === true,
+  };
 }
 
 /** The text of a message's content, with media parts left out. */
@@ -468,6 +318,34 @@ function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
   return blocks;
 }
 
+/**
+ * Make the session use `model`. The model must be one the CLI offers in this
+ * session, otherwise the call fails before any prompt is sent.
+ */
+async function selectModel(
+  connection: AcpConnection,
+  sessionId: string,
+  options: AntigravityModelOptions | null,
+  model: string,
+): Promise<void> {
+  if (!options || !options.models.some((m) => m.id === model)) {
+    throw new AntigravityError(
+      "Antigravity model is not available",
+      ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE,
+    );
+  }
+  if (options.currentModel === model) return;
+  resultOrThrow(
+    await connection.call(
+      "session/set_config_option",
+      { sessionId, configId: options.configId, value: model },
+      SETUP_TIMEOUT_MS,
+    ),
+    ANTIGRAVITY_ERRORS.SESSION_FAILED,
+    "Antigravity model could not be selected",
+  );
+}
+
 function cancelledError(): AntigravityError {
   return new AntigravityError(
     "Request cancelled",
@@ -498,10 +376,16 @@ function resultOrThrow<T>(
 
 interface AntigravityClientOptions {
   /**
-   * Profile directory passed as `--app-data-dir`. Get it from
-   * {@link antigravityProfileDir}. Without it the CLI uses the server login.
+   * The user's profile. Get it from {@link antigravityProfileLocation}. A
+   * client without a profile would run under the shared login, so there is no
+   * default.
    */
-  profileDir?: string;
+  profile: AntigravityProfileLocation;
+  /**
+   * The model the user picked. Null or missing keeps the CLI's own default.
+   * A model the CLI does not offer fails the call.
+   */
+  model?: string | null;
   /** Prompt timeout used when the call does not set `timeoutMs`. */
   timeoutMs?: number;
 }
@@ -511,7 +395,7 @@ export class AntigravityClient implements AIProvider {
   /** ACP tools are the agent's own tools, not HealthLog function calling. */
   readonly supportsTools = false;
 
-  constructor(private readonly options: AntigravityClientOptions = {}) {}
+  constructor(private readonly options: AntigravityClientOptions) {}
 
   async generateCompletion(
     params: CompletionParams,
@@ -569,14 +453,11 @@ export class AntigravityClient implements AIProvider {
     onDelta: ((delta: string) => void) | undefined,
     state: { connection: AcpConnection | null; done: boolean },
   ): Promise<CompletionResult> {
-    const args = ["acp", "--sandbox", "--disable-telemetry"];
-    if (this.options.profileDir) {
-      args.push("--app-data-dir", this.options.profileDir);
-    }
+    const args = acpArgs(this.options.profile);
 
     const connection = await AcpConnection.start(args, {
       cwd: workDir,
-      env: childEnv(),
+      env: antigravityChildEnv(),
     });
     state.connection = connection;
     if (state.done) {
@@ -598,20 +479,13 @@ export class AntigravityClient implements AIProvider {
     };
 
     const init = resultOrThrow<AcpInitializeResult>(
-      await connection.call(
-        "initialize",
-        {
-          protocolVersion: PROTOCOL_VERSION,
-          clientInfo: { name: "HealthLog", version: "1.0.0" },
-        },
-        SETUP_TIMEOUT_MS,
-      ),
+      await connection.call("initialize", initializeParams(), SETUP_TIMEOUT_MS),
       ANTIGRAVITY_ERRORS.SESSION_FAILED,
       "Antigravity initialize failed",
     );
 
-    const promptCaps = init?.capabilities?.promptCapabilities ?? {};
-    if (blocks.some((b) => b.type === "image") && promptCaps.image !== true) {
+    const promptCaps = promptCapabilitiesOf(init);
+    if (blocks.some((b) => b.type === "image") && !promptCaps.image) {
       throw new AntigravityError(
         "Antigravity does not accept image input",
         ANTIGRAVITY_ERRORS.PROMPT_FAILED,
@@ -619,7 +493,7 @@ export class AntigravityClient implements AIProvider {
     }
     if (
       blocks.some((b) => b.type === "resource") &&
-      promptCaps.resourceBlob !== true
+      !promptCaps.embeddedContext
     ) {
       throw new AntigravityError(
         "Antigravity does not accept PDF input",
@@ -641,6 +515,12 @@ export class AntigravityClient implements AIProvider {
         "Antigravity session could not be created",
         ANTIGRAVITY_ERRORS.SESSION_FAILED,
       );
+    }
+
+    const modelOptions = modelOptionsOf(session.configOptions);
+    const selected = this.options.model ?? null;
+    if (selected) {
+      await selectModel(connection, session.sessionId, modelOptions, selected);
     }
 
     const timeoutMs =
@@ -680,9 +560,78 @@ export class AntigravityClient implements AIProvider {
     return {
       content,
       tokensUsed: null,
-      model: init?.agentInfo?.name ?? "antigravity",
+      // The model the session ran on, as the CLI reports it. Without a
+      // reported model, the provider id is recorded.
+      model: selected ?? modelOptions?.currentModel ?? "antigravity",
       providerType: "antigravity",
       finishReason: stopReason === "max_tokens" ? "length" : "stop",
     };
   }
+}
+
+/**
+ * Start the CLI for one profile and open a session, without sending any
+ * prompt. The connection test uses this. It proves the profile is logged in,
+ * and it reports the prompt capabilities. The profile's auth state decides the
+ * outcome: "Authentication required" maps to AUTH_REQUIRED.
+ */
+export async function probeAntigravity(
+  profile: AntigravityProfileLocation,
+): Promise<{
+  capabilities: AntigravityPromptCapabilities;
+  agentName: string | null;
+  /** The model selector the CLI offers, or null when it offers none. */
+  modelOptions: AntigravityModelOptions | null;
+}> {
+  const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
+  let connection: AcpConnection | null = null;
+  try {
+    connection = await AcpConnection.start(acpArgs(profile), {
+      cwd: workDir,
+      env: antigravityChildEnv(),
+    });
+    const init = resultOrThrow<AcpInitializeResult>(
+      await connection.call("initialize", initializeParams(), SETUP_TIMEOUT_MS),
+      ANTIGRAVITY_ERRORS.SESSION_FAILED,
+      "Antigravity initialize failed",
+    );
+    const session = resultOrThrow<AcpSessionNewResult>(
+      await connection.call(
+        "session/new",
+        { cwd: workDir, mcpServers: [] },
+        SETUP_TIMEOUT_MS,
+      ),
+      ANTIGRAVITY_ERRORS.SESSION_FAILED,
+      "Antigravity session could not be created",
+    );
+    return {
+      capabilities: promptCapabilitiesOf(init),
+      agentName: init?.agentInfo?.name ?? null,
+      modelOptions: modelOptionsOf(session?.configOptions),
+    };
+  } finally {
+    await connection?.close();
+    rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
+// ─── Provider wiring ─────────────────────────────────────────
+
+/** Whether a stored profile id has a profile folder on the server. */
+export function antigravityAvailable(profileId: string | null): boolean {
+  return profileId !== null && antigravityProfileLocation(profileId) !== null;
+}
+
+/**
+ * The client for a user's stored profile and model. Null when the user has no
+ * profile, or the profile folder is gone.
+ */
+export function antigravityProviderFor(user: {
+  antigravityProfileId: string | null;
+  antigravityModel: string | null;
+}): AntigravityClient | null {
+  if (!user.antigravityProfileId) return null;
+  const profile = antigravityProfileLocation(user.antigravityProfileId);
+  if (!profile) return null;
+  return new AntigravityClient({ profile, model: user.antigravityModel });
 }

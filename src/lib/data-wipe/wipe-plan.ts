@@ -450,6 +450,15 @@ export const USER_RESET = {
   codexConnectionStatus: "disconnected",
   useCentralCodex: false,
 
+  // Antigravity CLI: the pointer to the profile folder and the result of the
+  // last test. The login files stay in that folder on the host. The wipe
+  // clears only the database pointer to them.
+  antigravityProfileId: null,
+  antigravityModel: null,
+  antigravityConnectionStatus: "disconnected",
+  antigravityConnectedAt: null,
+  antigravityCapabilitiesJson: Prisma.DbNull,
+
   // Integration credentials and per-integration state
   telegramBotToken: null,
   telegramChatId: null,

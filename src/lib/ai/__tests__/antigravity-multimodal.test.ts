@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AntigravityClient, ANTIGRAVITY_ERRORS } from "../antigravity-client";
+import { AntigravityClient } from "../antigravity-client";
 import type { CompletionParams } from "../types";
 
 // Mock the child_process spawn
@@ -26,10 +26,10 @@ import { spawn } from "child_process";
  */
 function createMockProcess({
   spawnEvent = true,
-  promptCapabilities = { image: true, resourceBlob: true },
+  promptCapabilities = { image: true, embeddedContext: true },
 }: {
   spawnEvent?: boolean;
-  promptCapabilities?: { image?: boolean; resourceBlob?: boolean };
+  promptCapabilities?: { image?: boolean; embeddedContext?: boolean };
 } = {}) {
   const handlers: {
     stdout: ((data: Buffer) => void)[];
@@ -110,7 +110,7 @@ function createMockProcess({
         id: msg.id,
         result: {
           agentInfo: { name: "Test Antigravity Agent" },
-          capabilities: {
+          agentCapabilities: {
             promptCapabilities,
           },
         },
@@ -160,12 +160,17 @@ function createMockProcess({
   return proc;
 }
 
+const TEST_PROFILE = {
+  geminiDir: "/var/lib/healthlog/antigravity",
+  appDataDir: "user-1",
+};
+
 describe("AntigravityClient multimodal support", () => {
   let client: AntigravityClient;
   let mockSpawn: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new AntigravityClient();
+    client = new AntigravityClient({ profile: TEST_PROFILE });
     mockSpawn = spawn as ReturnType<typeof vi.fn>;
     vi.clearAllMocks();
   });
@@ -177,11 +182,12 @@ describe("AntigravityClient multimodal support", () => {
   describe("image support", () => {
     it("accepts image content blocks when promptCapabilities.image is true", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -202,16 +208,17 @@ describe("AntigravityClient multimodal support", () => {
 
       expect(result.content).toBe("Processing image... Done.");
       expect(result.providerType).toBe("antigravity");
-      expect(result.model).toBe("Test Antigravity Agent");
+      expect(result.model).toBe("antigravity");
     });
 
     it("rejects image content blocks when promptCapabilities.image is false", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: false, resourceBlob: true },
+        promptCapabilities: { image: false, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -235,11 +242,12 @@ describe("AntigravityClient multimodal support", () => {
 
     it("supports JPEG and WebP image formats", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const jpegParams: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -259,11 +267,14 @@ describe("AntigravityClient multimodal support", () => {
 
       // Test WebP
       mockSpawn.mockClear();
-      mockSpawn.mockReturnValue(createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
-      }));
+      mockSpawn.mockReturnValue(
+        createMockProcess({
+          promptCapabilities: { image: true, embeddedContext: true },
+        }),
+      );
 
       const webpParams: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -284,13 +295,14 @@ describe("AntigravityClient multimodal support", () => {
   });
 
   describe("PDF support", () => {
-    it("accepts PDF document blocks when promptCapabilities.resourceBlob is true", async () => {
+    it("accepts PDF document blocks when promptCapabilities.embeddedContext is true", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -299,7 +311,8 @@ describe("AntigravityClient multimodal support", () => {
               {
                 type: "document",
                 mediaType: "application/pdf",
-                dataBase64: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
+                dataBase64:
+                  "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
               },
             ],
           },
@@ -312,13 +325,14 @@ describe("AntigravityClient multimodal support", () => {
       expect(result.providerType).toBe("antigravity");
     });
 
-    it("rejects PDF document blocks when promptCapabilities.resourceBlob is false", async () => {
+    it("rejects PDF document blocks when promptCapabilities.embeddedContext is false", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: false },
+        promptCapabilities: { image: true, embeddedContext: false },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -326,7 +340,8 @@ describe("AntigravityClient multimodal support", () => {
               {
                 type: "document",
                 mediaType: "application/pdf",
-                dataBase64: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
+                dataBase64:
+                  "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
               },
             ],
           },
@@ -340,7 +355,7 @@ describe("AntigravityClient multimodal support", () => {
 
     it("handles multi-page PDF documents", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
@@ -349,6 +364,7 @@ describe("AntigravityClient multimodal support", () => {
         "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUiA0IDAgUl0KL0NvdW50IDIKPj4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDIgMCBSCj4+CmVuZG9iagp4cmVmCjAgNQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA3NCAwMDAwMCBuIAowMDAwMDAwMTczIDAwMDAwIG4gCjAwMDAwMDAyMzAgMDAwMDAgbiAKdHJhaWxlcgo8PAovU2l6ZSA1Ci9Sb290IDEgMCBSCj4+CnN0YXJ0eHJlZgoyODUKJSVFT0Y=";
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -371,11 +387,12 @@ describe("AntigravityClient multimodal support", () => {
   describe("combined text + media", () => {
     it("handles text + image in same message", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -398,11 +415,12 @@ describe("AntigravityClient multimodal support", () => {
 
     it("handles text + PDF in same message", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -411,7 +429,8 @@ describe("AntigravityClient multimodal support", () => {
               {
                 type: "document",
                 mediaType: "application/pdf",
-                dataBase64: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
+                dataBase64:
+                  "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
               },
             ],
           },
@@ -424,11 +443,12 @@ describe("AntigravityClient multimodal support", () => {
 
     it("handles text + image + PDF in same message", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -442,7 +462,8 @@ describe("AntigravityClient multimodal support", () => {
               {
                 type: "document",
                 mediaType: "application/pdf",
-                dataBase64: "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
+                dataBase64:
+                  "JVBERi0xLjQKJeLjz9MKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZw==",
               },
             ],
           },
@@ -457,11 +478,12 @@ describe("AntigravityClient multimodal support", () => {
   describe("capability discovery", () => {
     it("queries promptCapabilities during initialize", async () => {
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: false },
+        promptCapabilities: { image: true, embeddedContext: false },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [{ role: "user", content: "Test" }],
       };
 
@@ -553,6 +575,7 @@ describe("AntigravityClient multimodal support", () => {
       mockSpawn.mockReturnValue(proc as unknown as ReturnType<typeof spawn>);
 
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
@@ -581,20 +604,22 @@ describe("AntigravityClient multimodal support", () => {
       // In practice, the mediaType validation happens upstream in the document processing
       // The client itself doesn't enforce MIME types, it relies on ACP capabilities
       const mockProc = createMockProcess({
-        promptCapabilities: { image: true, resourceBlob: true },
+        promptCapabilities: { image: true, embeddedContext: true },
       });
       mockSpawn.mockReturnValue(mockProc);
 
       // ACP should reject unsupported types, not HealthLog
       const params: CompletionParams = {
+        system: "Describe the attachments.",
         messages: [
           {
             role: "user",
             content: [
               {
                 type: "image",
-                mediaType: "image/bmp",
-                dataBase64: "Qk06AAAAAAAAADYAAAAoAAAAAQAAAAEAAAABABgAAAAAAAQAAAAAAAAAAAAAAAAAAP8A",
+                mediaType: "image/bmp" as "image/png",
+                dataBase64:
+                  "Qk06AAAAAAAAADYAAAAoAAAAAQAAAAEAAAABABgAAAAAAAQAAAAAAAAAAAAAAAAAAP8A",
               },
             ],
           },

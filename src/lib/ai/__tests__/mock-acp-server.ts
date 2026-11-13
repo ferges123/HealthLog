@@ -6,7 +6,7 @@
  */
 
 import { spawn, ChildProcess } from "child_process";
-import { createWriteStream, mkdirSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
@@ -18,17 +18,24 @@ interface MockACPServerOptions {
   authRequired?: boolean;
   /** Whether to simulate quota exceeded */
   quotaExceeded?: boolean;
-  /** Config options to return from session/new */
-  configOptions?: Array<{ name: string; type: string; enum?: string[] }>;
+  /** Config options to return from session/new (ACP configOptions shape) */
+  configOptions?: Array<{
+    id: string;
+    category?: string;
+    type: "select";
+    currentValue: string;
+    options: Array<{ value: string; name: string }>;
+  }>;
 }
 
 /**
  * Creates a mock ACP script that behaves like `agy acp`.
  * Returns the child process and a cleanup function.
  */
-export function createMockACPServer(
-  options: MockACPServerOptions = {},
-): { process: ChildProcess; cleanup: () => void } {
+export function createMockACPServer(options: MockACPServerOptions = {}): {
+  process: ChildProcess;
+  cleanup: () => void;
+} {
   const scriptDir = join(tmpdir(), `mock-acp-${randomUUID()}`);
   mkdirSync(scriptDir, { recursive: true });
 
@@ -40,10 +47,32 @@ const readline = require('readline');
 const responses = ${JSON.stringify(options.promptResponses ?? ["OK"])};
 const authRequired = ${options.authRequired ?? false};
 const quotaExceeded = ${options.quotaExceeded ?? false};
-const configOptions = ${JSON.stringify(options.configOptions ?? [
-    { name: "Model", type: "select", enum: ["gemini-3.8-flash-medium"] },
-    { name: "Thinking Level", type: "select", enum: ["low", "medium", "high"] },
-  ])};
+const configOptions = ${JSON.stringify(
+    options.configOptions ?? [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "gemini-3.8-flash-medium",
+        options: [
+          { value: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash" },
+        ],
+      },
+      {
+        id: "thought_level",
+        name: "Thinking Level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "low",
+        options: [
+          { value: "low", name: "Low" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
+        ],
+      },
+    ],
+  )};
 
 let responseIndex = 0;
 let sessionId = "test-session-" + Math.random().toString(36).slice(2);
@@ -74,7 +103,7 @@ rl.on('line', (line) => {
       sendResponse(msg.id, {
         protocolVersion: 1,
         agentInfo: { name: "Mock ACP", version: "0.0.1" },
-        capabilities: { promptCapabilities: { text: true, image: true } }
+        agentCapabilities: { promptCapabilities: { image: true, embeddedContext: true } }
       });
     }
     else if (msg.method === "session/new") {

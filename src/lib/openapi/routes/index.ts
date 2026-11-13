@@ -207,7 +207,7 @@ const registeredPaths: NonNullable<ZodOpenApiObject["paths"]> = {
   ...lifeCircumstancesPaths,
   ...dawarichPaths,
   ...relationLinkPaths,
-  // v1.48.0 — Antigravity CLI provider routes (appended, spread order is
+  // Antigravity CLI provider routes (appended, spread order is
   // load-bearing).
   ...antigravityPaths,
   // The environmental-context overview. Its own module because nothing else

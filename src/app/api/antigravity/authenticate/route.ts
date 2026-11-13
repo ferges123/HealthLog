@@ -1,23 +1,25 @@
 /**
  * POST /api/antigravity/authenticate
  *
- * Triggers Antigravity CLI authentication for the user.
- * Uses the official `agy acp --login` flow, which opens a browser for the user.
+ * Prepares the Antigravity profile for the user and returns the login steps.
+ * HealthLog does not handle OAuth tokens. The CLI stores the login in the
+ * profile folder, and `agy acp --login` writes it there when the user runs it.
  *
- * IMPORTANT: HealthLog does NOT store or handle OAuth tokens.
- * The CLI manages authentication independently via its own credential store.
  * This route only:
  * 1. Generates a profile ID for the user
- * 2. Sets up the profile directory (if ANTIGRAVITY_PROFILE_ROOT is configured)
+ * 2. Creates the profile folder when ANTIGRAVITY_PROFILE_ROOT is configured
  * 3. Records the profile ID in the database
- * 4. Returns instructions for the user to run `agy acp --login`
+ * 4. Returns the login command for the user to run on the HealthLog host
  */
-import { requireUser } from "@/lib/api-handler";
+import { apiHandler, requireAuth } from "@/lib/api-handler";
+import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { randomBytes } from "crypto";
+import { envValue } from "@/lib/env";
 import { mkdirSync, existsSync } from "fs";
 import { join } from "path";
-import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 
 export interface AntigravityAuthenticateResponse {
   /** Generated profile ID for this user */
@@ -38,43 +40,34 @@ function generateProfileId(): string {
   return randomBytes(16).toString("hex");
 }
 
-export async function POST() {
-  const userId = await requireUser();
+export const POST = apiHandler(async () => {
+  const { user: caller } = await requireAuth();
 
-  // Check if user already has a profile ID
-  const existingUser = await prisma.user.findUnique({
-    where: { id: userId },
+  const existing = await prisma.user.findUnique({
+    where: { id: caller.id },
     select: { antigravityProfileId: true },
   });
 
-  let profileId = existingUser?.antigravityProfileId;
+  const profileId = existing?.antigravityProfileId ?? generateProfileId();
 
-  if (!profileId) {
-    // Generate new profile ID
-    profileId = generateProfileId();
-  }
-
-  // Set up profile directory if ANTIGRAVITY_PROFILE_ROOT is configured
+  // Set up the profile folder if ANTIGRAVITY_PROFILE_ROOT is configured
+  const profileRoot = envValue("ANTIGRAVITY_PROFILE_ROOT") ?? null;
   let profileDir: string | null = null;
-  const profileRoot = process.env.ANTIGRAVITY_PROFILE_ROOT;
 
   if (profileRoot) {
     profileDir = join(profileRoot, profileId);
-
-    // Create directory with secure permissions
     if (!existsSync(profileDir)) {
       try {
         mkdirSync(profileDir, { recursive: true, mode: 0o700 });
       } catch (error) {
-        // Log error but continue - user may need to create manually
+        // The operator may need to create the folder by hand. Log the cause.
         console.error("Failed to create Antigravity profile directory:", error);
       }
     }
   }
 
-  // Save profile ID to database
   await prisma.user.update({
-    where: { id: userId },
+    where: { id: caller.id },
     data: {
       antigravityProfileId: profileId,
       antigravityConnectionStatus: "disconnected",
@@ -82,16 +75,20 @@ export async function POST() {
     },
   });
 
-  const instructions = [
-    "To complete Antigravity setup, you need to authenticate with your Antigravity account:",
-    "",
-    "1. Run the following command in your terminal:",
-    `   agy acp --login${profileDir ? ` --app-data-dir ${profileDir}` : ""}`,
-    "",
-    "2. A browser window will open for you to sign in",
-    "3. Complete the authentication flow",
-    "4. Return to HealthLog and test the connection",
-  ];
+  const instructions = profileRoot
+    ? [
+        "To connect Antigravity, sign in once on the machine that runs HealthLog.",
+        "The login must run on that host, because the profile folder lives there.",
+        "",
+        "1. Open a terminal on the HealthLog host (inside its container, for example with docker exec -it) and run:",
+        `   agy acp --login --gemini-dir ${profileRoot} --app-data-dir ${profileId}`,
+        "2. Open the printed link in a browser, sign in, then paste the code back into the terminal",
+        "3. Back in HealthLog, run the connection test",
+      ]
+    : [
+        "Antigravity is not set up on this server yet.",
+        "The operator must set ANTIGRAVITY_PROFILE_ROOT to an absolute folder path, then restart HealthLog.",
+      ];
 
   const response: AntigravityAuthenticateResponse = {
     profileId,
@@ -100,5 +97,5 @@ export async function POST() {
     manualLoginRequired: true,
   };
 
-  return NextResponse.json(response);
-}
+  return apiSuccess(response);
+});

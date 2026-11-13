@@ -112,7 +112,7 @@ export type InsightResult = z.infer<typeof insightResultSchema>;
 // the user owns, so it is a distinct runtime tag from `admin-key`: logs,
 // analytics and the budget classifier must be able to tell "the operator's
 // OpenAI key" from "an endpoint someone pointed us at".
-// v1.48.0 — `antigravity` is the Antigravity CLI (agy) ACP provider.
+// `antigravity` is the Antigravity CLI (agy) ACP provider.
 export type ProviderType =
   | "codex"
   | "admin-key"

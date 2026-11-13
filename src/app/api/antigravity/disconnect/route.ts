@@ -4,17 +4,17 @@
  * Disconnects the Antigravity CLI provider for the authenticated user.
  *
  * This route:
- * 1. Clears the stored connection status and metadata
- * 2. Does NOT delete the Antigravity account (that's done via `agy logout`)
- * 3. Does NOT claim to have logged out from the CLI
- * 4. Optionally instructs user to run `agy logout` if they want to revoke CLI access
+ * 1. Clears the profile ID, the connection status and the stored capabilities
+ * 2. Leaves the login files in the profile folder untouched
+ * 3. Returns the folder path so the operator can delete the login on the host
  *
- * IMPORTANT: The credential state in the CLI's own store is unchanged.
- * HealthLog only forgets the profile ID and connection status.
+ * The CLI has no logout command, so HealthLog cannot revoke the login itself.
  */
-import { requireUser } from "@/lib/api-handler";
+import { apiHandler, requireAuth } from "@/lib/api-handler";
+import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
-import { NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
+import { join } from "path";
 
 export interface AntigravityDisconnectResponse {
   /** Whether the disconnect was successful */
@@ -23,10 +23,17 @@ export interface AntigravityDisconnectResponse {
   instructions: string[];
 }
 
-export async function POST() {
-  const userId = await requireUser();
+export const dynamic = "force-dynamic";
 
-  // Clear Antigravity configuration from database
+export const POST = apiHandler(async () => {
+  const { user: caller } = await requireAuth();
+  const userId = caller.id;
+
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { antigravityProfileId: true },
+  });
+
   await prisma.user.update({
     where: { id: userId },
     data: {
@@ -34,18 +41,23 @@ export async function POST() {
       antigravityModel: null,
       antigravityConnectionStatus: "disconnected",
       antigravityConnectedAt: null,
-      antigravityCapabilitiesJson: null,
+      antigravityCapabilitiesJson: Prisma.DbNull,
     },
   });
+
+  const profileRoot = process.env.ANTIGRAVITY_PROFILE_ROOT;
+  const folder =
+    profileRoot && existing?.antigravityProfileId
+      ? join(profileRoot, existing.antigravityProfileId)
+      : null;
 
   const instructions = [
     "HealthLog has disconnected from Antigravity.",
     "",
-    "Your Antigravity account credentials are still stored by the CLI.",
-    "To revoke CLI access completely, run:",
-    "   agy logout",
-    "",
-    "This will remove all stored credentials from the CLI.",
+    "The login is still stored in the profile folder on the HealthLog host.",
+    ...(folder
+      ? ["To remove it, delete this folder on the host:", `   ${folder}`]
+      : []),
   ];
 
   const response: AntigravityDisconnectResponse = {
@@ -53,5 +65,5 @@ export async function POST() {
     instructions,
   };
 
-  return NextResponse.json(response);
-}
+  return apiSuccess(response);
+});

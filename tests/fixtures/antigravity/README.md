@@ -26,6 +26,7 @@ These fixtures cover Stage 3 multimodal requirements:
 ## Generation
 
 All PDFs are generated programmatically using a PDF library and contain ONLY synthetic data:
+
 - No real patient names
 - No real medical record numbers
 - No real dates

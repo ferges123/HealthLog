@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AntigravityClient, ANTIGRAVITY_ERRORS } from "../antigravity-client";
+import {
+  AntigravityClient,
+  ANTIGRAVITY_ERRORS,
+  modelOptionsOf,
+} from "../antigravity-client";
 import { singleUserTurn } from "../types";
 
 // Mock the child_process spawn
@@ -20,9 +24,35 @@ vi.mock("os", () => ({
 
 import { spawn } from "child_process";
 
+const TEST_PROFILE = {
+  geminiDir: "/var/lib/healthlog/antigravity",
+  appDataDir: "user-1",
+};
+
+/** The model selector, in the shape ACP session configOptions define. */
+const MODEL_OPTION = {
+  id: "model",
+  name: "Model",
+  category: "model",
+  type: "select",
+  currentValue: "model-fast",
+  options: [
+    { value: "model-fast", name: "Fast" },
+    { value: "model-pro", name: "Pro" },
+  ],
+};
+
+const DEFAULT_CONFIG_OPTIONS: unknown[] = [MODEL_OPTION];
+
 function createMockProcess({
   spawnEvent = true,
-}: { spawnEvent?: boolean } = {}) {
+  configOptions = DEFAULT_CONFIG_OPTIONS,
+  setConfigFails = false,
+}: {
+  spawnEvent?: boolean;
+  configOptions?: unknown[];
+  setConfigFails?: boolean;
+} = {}) {
   const handlers: {
     stdout: ((data: Buffer) => void)[];
     stderr: ((data: Buffer) => void)[];
@@ -103,7 +133,9 @@ function createMockProcess({
         result: {
           protocolVersion: 1,
           agentInfo: { name: "Mock ACP", version: "0.0.1" },
-          capabilities: { promptCapabilities: { text: true, image: true } },
+          agentCapabilities: {
+            promptCapabilities: { image: true, embeddedContext: true },
+          },
         },
       });
     } else if (msg.method === "session/new") {
@@ -112,20 +144,23 @@ function createMockProcess({
         id: msg.id,
         result: {
           sessionId: "test-session-123",
-          configOptions: [
-            {
-              name: "Model",
-              type: "select",
-              enum: ["gemini-3.8-flash-medium"],
-            },
-            {
-              name: "Thinking Level",
-              type: "select",
-              enum: ["low", "medium", "high"],
-            },
-          ],
+          configOptions,
         },
       });
+    } else if (msg.method === "session/set_config_option") {
+      if (setConfigFails) {
+        sendMessage({
+          jsonrpc: "2.0",
+          id: msg.id,
+          error: { code: -32602, message: "Invalid value" },
+        });
+      } else {
+        sendMessage({
+          jsonrpc: "2.0",
+          id: msg.id,
+          result: { configOptions },
+        });
+      }
     } else if (msg.method === "session/prompt") {
       // Send message chunk
       sendMessage({
@@ -172,21 +207,21 @@ describe("AntigravityClient", () => {
 
   describe("type", () => {
     it('has type="antigravity"', () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       expect(client.type).toBe("antigravity");
     });
   });
 
   describe("supportsTools", () => {
     it("is false (ACP tools are NOT HealthLog function calling)", () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       expect(client.supportsTools).toBe(false);
     });
   });
 
   describe("generateCompletion", () => {
     it("returns a CompletionResult with required fields", async () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       const result = await client.generateCompletion(
         singleUserTurn({ system: "You are helpful.", user: "Hello" }),
       );
@@ -201,7 +236,7 @@ describe("AntigravityClient", () => {
     });
 
     it("includes system prompt in the request", async () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       await client.generateCompletion(
         singleUserTurn({ system: "Custom system", user: "Hello" }),
       );
@@ -211,7 +246,7 @@ describe("AntigravityClient", () => {
     });
 
     it("handles multimodal content (image)", async () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       const result = await client.generateCompletion(
         singleUserTurn({
           system: "Describe images.",
@@ -231,7 +266,7 @@ describe("AntigravityClient", () => {
 
   describe("generateCompletionStream", () => {
     it("calls onDelta for each chunk", async () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       const chunks: string[] = [];
 
       const result = await client.generateCompletionStream(
@@ -249,7 +284,7 @@ describe("AntigravityClient", () => {
       const { proc, handlers } = createMockProcess({ spawnEvent: false });
       mockSpawn.mockReturnValue(proc);
 
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
 
       const promise = client.generateCompletion(
         singleUserTurn({ system: "s", user: "u" }),
@@ -268,7 +303,7 @@ describe("AntigravityClient", () => {
 
   describe("process lifecycle", () => {
     it("cleans up process after completion", async () => {
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
       await client.generateCompletion(
         singleUserTurn({ system: "s", user: "u" }),
       );
@@ -278,7 +313,7 @@ describe("AntigravityClient", () => {
     });
 
     it("cleans up process on error", async () => {
-      const { proc, sendMessage, handlers } = createMockProcess();
+      const { proc, sendMessage } = createMockProcess();
       mockSpawn.mockReturnValue(proc);
 
       // Make session/new fail
@@ -295,7 +330,7 @@ describe("AntigravityClient", () => {
         return originalHandle.call(proc.stdin, data);
       });
 
-      const client = new AntigravityClient();
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
 
       await expect(
         client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
@@ -303,5 +338,180 @@ describe("AntigravityClient", () => {
 
       expect(proc.kill).toHaveBeenCalled();
     });
+  });
+});
+
+/** Every JSON-RPC message the client wrote to the child's stdin, in order. */
+function sentMessages(
+  write: unknown,
+): { id?: number; method?: string; params?: Record<string, unknown> }[] {
+  const calls = (write as { mock: { calls: unknown[][] } }).mock.calls;
+  return calls.flatMap(([data]) =>
+    String(data)
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line)),
+  );
+}
+
+describe("modelOptionsOf", () => {
+  it("reads the model selector from the ACP configOptions shape", () => {
+    expect(modelOptionsOf([MODEL_OPTION])).toEqual({
+      configId: "model",
+      models: [
+        { id: "model-fast", name: "Fast" },
+        { id: "model-pro", name: "Pro" },
+      ],
+      currentModel: "model-fast",
+    });
+  });
+
+  it("flattens grouped options", () => {
+    const grouped = {
+      ...MODEL_OPTION,
+      options: [
+        {
+          group: "Google",
+          options: [{ value: "model-pro", name: "Pro" }],
+        },
+      ],
+    };
+    expect(modelOptionsOf([grouped])?.models).toEqual([
+      { id: "model-pro", name: "Pro" },
+    ]);
+  });
+
+  it("matches by id when the category is missing", () => {
+    const byId = { ...MODEL_OPTION, category: undefined };
+    expect(modelOptionsOf([byId])?.configId).toBe("model");
+  });
+
+  it("skips entries without a string value and names models by value when unnamed", () => {
+    const option = {
+      ...MODEL_OPTION,
+      options: [{ value: "model-x" }, { value: 7 }, { name: "No value" }],
+    };
+    expect(modelOptionsOf([option])?.models).toEqual([
+      { id: "model-x", name: "model-x" },
+    ]);
+  });
+
+  it("returns null when the CLI offers no model selector", () => {
+    expect(modelOptionsOf([{ id: "mode", type: "select" }])).toBeNull();
+    expect(modelOptionsOf(undefined)).toBeNull();
+  });
+});
+
+describe("AntigravityClient model selection", () => {
+  let mockSpawn: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSpawn = spawn as ReturnType<typeof vi.fn>;
+  });
+
+  it("sets the chosen model before the prompt is sent", async () => {
+    const { proc } = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({
+      profile: TEST_PROFILE,
+      model: "model-pro",
+    });
+    const result = await client.generateCompletion(
+      singleUserTurn({ system: "s", user: "u" }),
+    );
+
+    const methods = sentMessages(proc.stdin.write).map((m) => m.method);
+    const setAt = methods.indexOf("session/set_config_option");
+    expect(setAt).toBeGreaterThan(methods.indexOf("session/new"));
+    expect(setAt).toBeLessThan(methods.indexOf("session/prompt"));
+
+    const setCall = sentMessages(proc.stdin.write).find(
+      (m) => m.method === "session/set_config_option",
+    );
+    expect(setCall?.params).toEqual({
+      sessionId: "test-session-123",
+      configId: "model",
+      value: "model-pro",
+    });
+    expect(result.model).toBe("model-pro");
+  });
+
+  it("keeps the CLI default and reports its model when no model is chosen", async () => {
+    const { proc } = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({ profile: TEST_PROFILE });
+    const result = await client.generateCompletion(
+      singleUserTurn({ system: "s", user: "u" }),
+    );
+
+    const methods = sentMessages(proc.stdin.write).map((m) => m.method);
+    expect(methods).not.toContain("session/set_config_option");
+    expect(result.model).toBe("model-fast");
+  });
+
+  it("does not send a change when the chosen model is already the current one", async () => {
+    const { proc } = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({
+      profile: TEST_PROFILE,
+      model: "model-fast",
+    });
+    await client.generateCompletion(singleUserTurn({ system: "s", user: "u" }));
+
+    const methods = sentMessages(proc.stdin.write).map((m) => m.method);
+    expect(methods).not.toContain("session/set_config_option");
+  });
+
+  it("fails before the prompt when the CLI does not offer the chosen model", async () => {
+    const { proc } = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({
+      profile: TEST_PROFILE,
+      model: "model-retired",
+    });
+
+    await expect(
+      client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
+    ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE });
+
+    const methods = sentMessages(proc.stdin.write).map((m) => m.method);
+    expect(methods).not.toContain("session/prompt");
+    expect(proc.kill).toHaveBeenCalled();
+  });
+
+  it("fails before the prompt when the CLI rejects the model change", async () => {
+    const { proc } = createMockProcess({ setConfigFails: true });
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({
+      profile: TEST_PROFILE,
+      model: "model-pro",
+    });
+
+    await expect(
+      client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
+    ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.SESSION_FAILED });
+
+    const methods = sentMessages(proc.stdin.write).map((m) => m.method);
+    expect(methods).not.toContain("session/prompt");
+  });
+
+  it("fails when the CLI offers no model selector at all", async () => {
+    const { proc } = createMockProcess({ configOptions: [] });
+    mockSpawn.mockReturnValue(proc);
+
+    const client = new AntigravityClient({
+      profile: TEST_PROFILE,
+      model: "model-pro",
+    });
+
+    await expect(
+      client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
+    ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE });
   });
 });
