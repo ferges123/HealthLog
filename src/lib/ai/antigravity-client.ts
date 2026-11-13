@@ -14,9 +14,10 @@
  * - The agent gets no MCP servers and no fs or terminal capabilities.
  * - Every permission request from the agent is refused.
  *
- * Checked against agy 1.5.8: the flags, the `initialize` shape and the
- * "Authentication required" error on a fresh profile. A real Google login and
- * a real prompt have not been run end to end yet.
+ * Checked against agy 1.5.8: the flags, the `initialize` shape, the
+ * "Authentication required" error on a fresh profile, and a live E2E run on
+ * 2026-11-13 (probe + text completion + streaming, gemini-3.8-flash,
+ * image/PDF capabilities confirmed).
  *
  * @see docs/antigravity-cli-architecture.md
  * @see docs/antigravity-cli-transport-decision.md
