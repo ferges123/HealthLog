@@ -26,13 +26,14 @@ import {
   REASONING_EFFORTS,
 } from "@/lib/ai/reasoning-effort";
 
-/** The five provider kinds a user may select. */
+/** The six provider kinds a user may select. */
 export const AI_PROVIDER_KINDS = [
   "OPENAI",
   "ANTHROPIC",
   "LOCAL",
   "OPENAI_COMPATIBLE",
   "CHATGPT_OAUTH",
+  "ANTIGRAVITY_CLI",
 ] as const;
 
 export const aiProviderKindSchema = z.enum(AI_PROVIDER_KINDS);
