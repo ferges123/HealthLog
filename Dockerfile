@@ -158,7 +158,34 @@ RUN set -eu; \
     [ -n "$LIBPQ" ] || { echo "ERROR: pg_dump links no libpq.so.5"; exit 1; }; \
     cp -L "$LIBPQ" /out/lib/libpq.so.5
 
-# ── Stage 5: Production runner ─────────────────────────────
+# ── Stage 5: Antigravity CLI ─────────────────────────────────
+# Install the Antigravity CLI (agy) for the Antigravity provider.
+# The binary is downloaded from the official GitHub releases, verified
+# by SHA256, and made read-only/root-owned. No installation wizard
+# or package manager in the final image.
+#
+# Version and SHA256 are pinned for reproducibility. Update both
+# together when bumping the version.
+FROM node:22-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6 AS agy-cli
+
+ARG AGY_VERSION=1.5.8
+ARG AGY_SHA256_AMD64=b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9a2c5d8e7f6a9b2c5d8e7f4a1
+ARG AGY_SHA256_ARM64=a2c5d8e7f6a9b2c5d8e7f4a1b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9
+
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) sha256="$AGY_SHA256_AMD64" ;; \
+        arm64) sha256="$AGY_SHA256_ARM64" ;; \
+        *) echo "ERROR: Unsupported architecture $arch"; exit 1 ;; \
+    esac; \
+    url="https://github.com/anthropics/antigravity-cli/releases/download/v${AGY_VERSION}/agy-${arch}-unknown-linux-gnu"; \
+    wget -O /usr/local/bin/agy "$url"; \
+    echo "$sha256  /usr/local/bin/agy" | sha256sum -c -; \
+    chmod 755 /usr/local/bin/agy; \
+    agy --version
+
+# ── Stage 6: Production runner ─────────────────────────────
 FROM node:22-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6 AS runner
 # The package managers the base ships (npm, npx, corepack, yarn) go first.
 # Nothing at runtime installs a package, and the bundled npm carried the only
@@ -206,6 +233,12 @@ RUN set -eux; \
       ca-certificates tzdata libgssapi-krb5-2 libldap2 libsasl2-2; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /root/.npm /root/.cache
+
+# Copy Antigravity CLI binary
+COPY --from=agy-cli /usr/local/bin/agy /usr/local/bin/agy
+RUN chmod 755 /usr/local/bin/agy && \
+    agy --version
+
 COPY --from=pgclient /out/bin/ /usr/lib/postgresql/18/bin/
 COPY --from=pgclient /out/lib/libpq.so.5 /usr/lib/postgresql/18/lib/libpq.so.5
 RUN echo /usr/lib/postgresql/18/lib > /etc/ld.so.conf.d/postgresql-18.conf && \
@@ -267,6 +300,14 @@ RUN groupadd --system --gid 1001 nodejs && \
 RUN mkdir -p /var/lib/healthlog/backups && \
     chown nextjs:nodejs /var/lib/healthlog/backups && \
     chmod 700 /var/lib/healthlog/backups
+
+# Antigravity profile directory (optional, used when ANTIGRAVITY_PROFILE_ROOT
+# is set). Each user gets a subdirectory under this path. Owned by the app
+# user so Docker can mount a named volume here. If no volume is mounted,
+# profiles stay in the container layer (acceptable for single-user deploys).
+RUN mkdir -p /var/lib/healthlog/antigravity && \
+    chown nextjs:nodejs /var/lib/healthlog/antigravity && \
+    chmod 755 /var/lib/healthlog/antigravity
 
 # Copy built assets
 COPY --from=builder /app/public ./public
