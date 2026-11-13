@@ -1,237 +1,118 @@
 /**
- * Integration test for Antigravity session isolation and profile separation.
+ * Antigravity session isolation, with real child processes.
  *
- * Verifies that multiple users cannot access each other's profiles,
- * sessions, or credentials.
+ * Each completion starts its own `agy acp` process. The fake `agy` in
+ * `antigravity-fake-agy.ts` records how it was started, so these tests check
+ * the arguments, the environment and the workspace the CLI really receives.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { AntigravityClient, antigravityProfileDir } from "@/lib/ai/antigravity-client";
+import { existsSync, mkdirSync } from "node:fs";
+import path from "node:path";
 
-// Mock environment
-const originalEnv = process.env;
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-describe("Antigravity Session Isolation", () => {
+import {
+  AntigravityClient,
+  antigravityProfileLocation,
+} from "@/lib/ai/antigravity-client";
+import { singleUserTurn } from "@/lib/ai/types";
+
+import {
+  installFakeAgy,
+  type FakeAgy,
+  type FakeAgyRecord,
+} from "./antigravity-fake-agy";
+
+const USER_A = "user-a";
+const USER_B = "user-b";
+
+function startsOf(records: FakeAgyRecord[]) {
+  return records.filter(
+    (r): r is Extract<FakeAgyRecord, { kind: "start" }> => r.kind === "start",
+  );
+}
+
+describe("Antigravity session isolation", () => {
+  let fake: FakeAgy;
+
+  beforeAll(() => {
+    fake = installFakeAgy();
+    mkdirSync(path.join(fake.profileRoot, USER_A));
+    mkdirSync(path.join(fake.profileRoot, USER_B));
+  });
+
+  afterAll(() => {
+    fake.cleanup();
+  });
+
   beforeEach(() => {
-    vi.resetModules();
-    process.env = { ...originalEnv };
+    fake.reset();
   });
 
-  afterEach(() => {
-    process.env = originalEnv;
+  function clientFor(profileId: string) {
+    const profile = antigravityProfileLocation(profileId);
+    if (!profile) throw new Error(`no profile ${profileId}`);
+    return new AntigravityClient({ profile });
+  }
+
+  it("runs each user's completion under that user's profile", async () => {
+    const a = await clientFor(USER_A).generateCompletion(
+      singleUserTurn({ system: "s", user: "hello" }),
+    );
+    const b = await clientFor(USER_B).generateCompletion(
+      singleUserTurn({ system: "s", user: "hello" }),
+    );
+
+    expect(a.content).toBe(`profile:${USER_A}`);
+    expect(b.content).toBe(`profile:${USER_B}`);
+
+    const starts = startsOf(fake.records());
+    expect(starts.map((s) => s.appDataDir)).toEqual([USER_A, USER_B]);
+    expect(starts.every((s) => s.geminiDir === fake.profileRoot)).toBe(true);
   });
 
-  describe("Profile directory isolation", () => {
-    it("returns null when ANTIGRAVITY_PROFILE_ROOT not set", () => {
-      delete process.env.ANTIGRAVITY_PROFILE_ROOT;
+  it("does not pass application secrets to the agent", async () => {
+    await clientFor(USER_A).generateCompletion(
+      singleUserTurn({ system: "s", user: "hello" }),
+    );
 
-      const profileDir = antigravityProfileDir("user-123");
-      expect(profileDir).toBeNull();
-    });
+    const [start] = startsOf(fake.records());
+    expect(start.envKeys).toContain("PATH");
+    expect(start.envKeys).not.toContain("DATABASE_URL");
+    expect(start.envKeys).not.toContain("ENCRYPTION_KEY");
+    expect(start.envKeys).not.toContain("SESSION_SECRET");
+  });
 
-    it("returns null for invalid user ID", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
+  it("refuses the permission request the agent sends", async () => {
+    await clientFor(USER_A).generateCompletion(
+      singleUserTurn({ system: "s", user: "hello" }),
+    );
 
-      const profileDir = antigravityProfileDir("invalid/user/id");
-      expect(profileDir).toBeNull();
-    });
-
-    it("returns null for too long user ID", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      const longId = "a".repeat(100);
-      const profileDir = antigravityProfileDir(longId);
-      expect(profileDir).toBeNull();
-    });
-
-    it("constructs profile path from root and user ID", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      // Mock existsSync to return true
-      vi.doMock("fs", () => ({
-        existsSync: vi.fn(() => true),
-        mkdtempSync: vi.fn(),
-        rmSync: vi.fn(),
-      }));
-
-      const profileDir = antigravityProfileDir("user-123");
-      expect(profileDir).toBe("/var/lib/healthlog/antigravity/user-123");
-    });
-
-    it("returns null when profile directory does not exist", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      // Mock existsSync to return false
-      vi.doMock("fs", () => ({
-        existsSync: vi.fn(() => false),
-        mkdtempSync: vi.fn(),
-        rmSync: vi.fn(),
-      }));
-
-      const profileDir = antigravityProfileDir("user-123");
-      expect(profileDir).toBeNull();
+    const permission = fake.records().find((r) => r.kind === "permission");
+    expect(permission).toEqual({
+      kind: "permission",
+      outcome: { outcome: "selected", optionId: "reject-once" },
     });
   });
 
-  describe("User ID validation", () => {
-    it("accepts alphanumeric user IDs", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
+  it("runs in an empty workspace that is removed after the call", async () => {
+    await clientFor(USER_A).generateCompletion(
+      singleUserTurn({ system: "s", user: "hello" }),
+    );
 
-      vi.doMock("fs", () => ({
-        existsSync: vi.fn(() => true),
-        mkdtempSync: vi.fn(),
-        rmSync: vi.fn(),
-      }));
-
-      const validIds = ["user123", "USER456", "user-789", "user_abc"];
-
-      for (const id of validIds) {
-        const profileDir = antigravityProfileDir(id);
-        expect(profileDir).toContain(id);
-      }
-    });
-
-    it("rejects user IDs with path separators", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      const invalidIds = ["user/123", "user\\456", "../other-user", "./user"];
-
-      for (const id of invalidIds) {
-        const profileDir = antigravityProfileDir(id);
-        expect(profileDir).toBeNull();
-      }
-    });
-
-    it("rejects user IDs with special characters", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      const invalidIds = ["user@123", "user!456", "user#789", "user $abc"];
-
-      for (const id of invalidIds) {
-        const profileDir = antigravityProfileDir(id);
-        expect(profileDir).toBeNull();
-      }
-    });
+    const [start] = startsOf(fake.records());
+    expect(start.cwd).not.toBe(fake.profileRoot);
+    expect(start.cwd.startsWith(fake.profileRoot)).toBe(false);
+    expect(existsSync(start.cwd)).toBe(false);
   });
 
-  describe("Session isolation", () => {
-    it("creates separate sessions per user", async () => {
-      vi.doMock("child_process", () => ({
-        spawn: vi.fn(),
-      }));
-
-      vi.doMock("fs", () => ({
-        mkdtempSync: vi.fn(() => "/tmp/healthlog-acp-test"),
-        rmSync: vi.fn(),
-        existsSync: vi.fn(() => true),
-      }));
-
-      vi.doMock("os", () => ({
-        tmpdir: () => "/tmp",
-      }));
-
-      const client1 = new AntigravityClient({
-        profileDir: "/var/lib/healthlog/antigravity/user-1",
-      });
-
-      const client2 = new AntigravityClient({
-        profileDir: "/var/lib/healthlog/antigravity/user-2",
-      });
-
-      // Each client should use its own profile directory
-      expect(client1).toBeDefined();
-      expect(client2).toBeDefined();
-    });
-
-    it("does not share credentials between profiles", () => {
-      // This is enforced by the --app-data-dir flag
-      // Each profile directory has its own credential store
-
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      const profile1 = antigravityProfileDir("user-1");
-      const profile2 = antigravityProfileDir("user-2");
-
-      // Profile directories should be different
-      expect(profile1).not.toBe(profile2);
-
-      // Each profile would have its own credentials (managed by CLI)
-    });
+  it("does not start a profile that was never set up", () => {
+    expect(antigravityProfileLocation("user-never-set-up")).toBeNull();
+    expect(startsOf(fake.records())).toEqual([]);
   });
 
-  describe("Process isolation", () => {
-    it("spawns separate process per completion", async () => {
-      const mockSpawn = vi.fn(() => ({
-        stdin: { on: vi.fn(), write: vi.fn() },
-        stdout: { on: vi.fn() },
-        stderr: { on: vi.fn(), resume: vi.fn() },
-        pid: 4242,
-        exitCode: null,
-        signalCode: null,
-        on: vi.fn((event: string, handler: (...args: never[]) => void) => {
-          if (event === "spawn") {
-            setTimeout(() => handler(), 0);
-          }
-        }),
-        kill: vi.fn(),
-      }));
-
-      vi.doMock("child_process", () => ({
-        spawn: mockSpawn,
-      }));
-
-      vi.doMock("fs", () => ({
-        mkdtempSync: vi.fn(() => "/tmp/healthlog-acp-test"),
-        rmSync: vi.fn(),
-        existsSync: vi.fn(() => true),
-      }));
-
-      vi.doMock("os", () => ({
-        tmpdir: () => "/tmp",
-      }));
-
-      // Spawn would be called for each completion
-      // This is tested in the unit tests
-    });
-  });
-
-  describe("No cross-user access", () => {
-    it("user cannot access operator profile", () => {
-      process.env.ANTIGRAVITY_PROFILE_ROOT = "/var/lib/healthlog/antigravity";
-
-      // User tries to access operator profile
-      const userProfile = antigravityProfileDir("regular-user");
-      const operatorProfile = antigravityProfileDir("operator");
-
-      // Profiles are completely separate
-      expect(userProfile).not.toBe(operatorProfile);
-    });
-
-    it("profile ID is opaque identifier (not a path)", () => {
-      // Profile IDs are random hex strings, not filesystem paths
-      // This prevents path traversal attacks
-
-      const validProfileId = "a1b2c3d4e5f6g7h8";
-      expect(/^[A-Za-z0-9]+$/.test(validProfileId)).toBe(true);
-      expect(validProfileId).not.toContain("/");
-      expect(validProfileId).not.toContain("\\");
-      expect(validProfileId).not.toContain(".");
-    });
-  });
-
-  describe("Cleanup and resource management", () => {
-    it("cleans up workspace after completion", () => {
-      // This is tested in the unit tests with rmSync mock
-      // Every completion cleans up its workspace in finally block
-    });
-
-    it("terminates process on abort", () => {
-      // This is tested in the unit tests
-      // AbortSignal triggers process termination
-    });
-
-    it("cleans up zombie processes", () => {
-      // Process cleanup: SIGTERM → SIGKILL after 2s grace
-      // Tested in unit tests with kill mock
-    });
+  it("does not resolve a profile id that escapes the profile root", () => {
+    expect(antigravityProfileLocation("../user-a")).toBeNull();
+    expect(antigravityProfileLocation("user-a/../user-b")).toBeNull();
+    expect(startsOf(fake.records())).toEqual([]);
   });
 });

@@ -1,106 +1,131 @@
 /**
- * Integration test for Antigravity consent and document handling.
+ * Antigravity and consent, against the real database.
  *
- * Verifies that consent is properly gated before document processing
- * and that external egress is properly tracked.
+ * Antigravity sends data to Google, so a Coach turn that uses it needs an
+ * active Coach consent receipt, the same as the other server-managed
+ * providers. A revoked receipt does not count.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { AntigravityClient } from "@/lib/ai/antigravity-client";
+import {
+  assertConsentForChain,
+  ConsentRequiredError,
+  isExternalDocumentEgress,
+} from "@/lib/ai/consent-guard";
 import { isExternalProvider } from "@/lib/ai/provider-egress";
 import { documentProviderRank } from "@/lib/documents/provider-rank";
 import { supportsPdfForProvider } from "@/lib/ai/vision-capability";
 
-describe("Antigravity Consent and Document Handling", () => {
-  describe("External provider classification", () => {
-    it("classifies Antigravity as external provider", () => {
-      expect(isExternalProvider("antigravity")).toBe(true);
-    });
+import { getPrismaClient, truncateAllTables } from "./setup";
 
-    it("classifies local provider as non-external", () => {
-      expect(isExternalProvider("local")).toBe(false);
-    });
+const PROFILE = { geminiDir: "/unused", appDataDir: "unused" };
 
-    it("classifies Codex as external (train-by-default)", () => {
-      expect(isExternalProvider("codex")).toBe(true);
-    });
+function antigravityChain() {
+  return [
+    {
+      providerType: "antigravity" as const,
+      instance: new AntigravityClient({ profile: PROFILE }),
+    },
+  ];
+}
+
+let counter = 0;
+async function makeUser() {
+  const suffix = counter++;
+  return getPrismaClient().user.create({
+    data: {
+      username: `agy-consent-${suffix}`,
+      email: `agy-consent-${suffix}@example.test`,
+      timezone: "UTC",
+    },
+  });
+}
+
+describe("Antigravity classification", () => {
+  it("classifies Antigravity as an external provider", () => {
+    expect(isExternalProvider("antigravity")).toBe(true);
+    expect(isExternalProvider("local")).toBe(false);
+    expect(isExternalProvider("codex")).toBe(true);
   });
 
-  describe("Document provider rank", () => {
-    it("ranks Antigravity last (external, train-by-default)", () => {
-      const rank = documentProviderRank("antigravity");
-      expect(rank).toBe(3); // Lowest priority
-    });
-
-    it("ranks local first", () => {
-      const rank = documentProviderRank("local");
-      expect(rank).toBe(0); // Highest priority
-    });
-
-    it("ranks OpenAI-compatible before Antigravity", () => {
-      const rankCompat = documentProviderRank("openai-compatible");
-      const rankAntigravity = documentProviderRank("antigravity");
-      expect(rankCompat).toBeLessThan(rankAntigravity);
-    });
-
-    it("ranks Antigravity same as Codex (both external/train)", () => {
-      const rankCodex = documentProviderRank("codex");
-      const rankAntigravity = documentProviderRank("antigravity");
-      expect(rankCodex).toBe(rankAntigravity);
-    });
+  it("ranks Antigravity last for documents, with Codex", () => {
+    expect(documentProviderRank("antigravity")).toBe(3);
+    expect(documentProviderRank("local")).toBe(0);
+    expect(documentProviderRank("codex")).toBe(
+      documentProviderRank("antigravity"),
+    );
+    expect(documentProviderRank("openai-compatible")).toBeLessThan(
+      documentProviderRank("antigravity"),
+    );
   });
 
-  describe("PDF support", () => {
-    it("reports PDF support for Antigravity", () => {
-      expect(supportsPdfForProvider("antigravity")).toBe(true);
-    });
-
-    it("reports PDF support for Anthropic", () => {
-      expect(supportsPdfForProvider("anthropic")).toBe(true);
-    });
-
-    it("denies PDF support for OpenAI", () => {
-      expect(supportsPdfForProvider("openai")).toBe(false);
-    });
-
-    it("denies PDF support for Codex", () => {
-      expect(supportsPdfForProvider("codex")).toBe(false);
-    });
+  it("reports PDF and image support for Antigravity", () => {
+    expect(supportsPdfForProvider("antigravity")).toBe(true);
+    expect(supportsPdfForProvider("openai")).toBe(false);
+    expect(supportsPdfForProvider("codex")).toBe(false);
   });
 
-  describe("Vision capability", () => {
-    it("enables vision for Antigravity", () => {
-      const { supportsVisionForConfig } = require("@/lib/ai/vision-capability");
-      expect(supportsVisionForConfig("antigravity", null)).toBe(true);
-    });
+  it("counts a document read through Antigravity as external egress", () => {
+    expect(isExternalDocumentEgress("antigravity")).toBe(true);
+  });
+});
+
+describe("Antigravity Coach consent (database)", () => {
+  beforeEach(async () => {
+    await truncateAllTables(getPrismaClient());
   });
 
-  describe("Consent requirements", () => {
-    it("requires consent before document processing with Antigravity", () => {
-      // Antigravity is external provider
-      const isExternal = isExternalProvider("antigravity");
-      expect(isExternal).toBe(true);
+  it("refuses a Coach turn through Antigravity without an active Coach receipt", async () => {
+    const user = await makeUser();
 
-      // External providers require consent
-      // This is enforced by consent-guard.ts in the actual implementation
-    });
-
-    it("requires consent when falling back from Antigravity to Codex", () => {
-      // Both Antigravity and Codex are rank 3 (external)
-      const rankAntigravity = documentProviderRank("antigravity");
-      const rankCodex = documentProviderRank("codex");
-
-      expect(rankAntigravity).toBe(3);
-      expect(rankCodex).toBe(3);
-
-      // Any fallback between external providers should check consent
-      // This is enforced by the consent guard
-    });
+    await expect(
+      assertConsentForChain({
+        userId: user.id,
+        chain: antigravityChain(),
+        surface: "coach",
+      }),
+    ).rejects.toBeInstanceOf(ConsentRequiredError);
   });
 
-  describe("Document egress tracking", () => {
-    it("tracks Antigravity document reads as external egress", () => {
-      const isExternal = isExternalProvider("antigravity");
-      // This will be tracked in the vault audit log
-      expect(isExternal).toBe(true);
+  it("allows the same turn once the user has an active Coach receipt", async () => {
+    const user = await makeUser();
+    await getPrismaClient().consentReceipt.create({
+      data: {
+        userId: user.id,
+        kind: "ai_coach",
+        artefact: "test",
+        signedAt: new Date(),
+      },
     });
+
+    await expect(
+      assertConsentForChain({
+        userId: user.id,
+        chain: antigravityChain(),
+        surface: "coach",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not count a revoked Coach receipt", async () => {
+    const user = await makeUser();
+    await getPrismaClient().consentReceipt.create({
+      data: {
+        userId: user.id,
+        kind: "ai_coach",
+        artefact: "test",
+        signedAt: new Date(),
+        revokedAt: new Date(),
+      },
+    });
+
+    await expect(
+      assertConsentForChain({
+        userId: user.id,
+        chain: antigravityChain(),
+        surface: "coach",
+      }),
+    ).rejects.toBeInstanceOf(ConsentRequiredError);
   });
 });

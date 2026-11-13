@@ -1,363 +1,109 @@
 /**
- * Integration test for Antigravity provider with mock ACP executable.
+ * Antigravity in the provider chain, against the real database and a real
+ * (fake) `agy` process.
  *
- * Tests provider registration, chain integration, and fallback behavior
- * without requiring a real Antigravity account or medical data.
+ * `resolveProviderChain` reads the user's stored chain, profile and model. The
+ * Antigravity hop is kept only when the profile folder exists on the server.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { AntigravityClient, ANTIGRAVITY_ERRORS } from "@/lib/ai/antigravity-client";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+
 import { resolveProviderChain } from "@/lib/ai/provider";
-import { prisma } from "@/lib/db";
+import { singleUserTurn } from "@/lib/ai/types";
 
-// Mock the child_process spawn
-vi.mock("child_process", () => ({
-  spawn: vi.fn(),
-}));
+import { getPrismaClient, truncateAllTables } from "./setup";
+import { installFakeAgy, type FakeAgy } from "./antigravity-fake-agy";
 
-// Mock fs operations
-vi.mock("fs", () => ({
-  mkdtempSync: vi.fn(() => "/tmp/healthlog-acp-test"),
-  rmSync: vi.fn(),
-  existsSync: vi.fn(() => true),
-}));
+const AGY_CHAIN = [{ providerType: "antigravity", priority: 1, enabled: true }];
 
-vi.mock("os", () => ({
-  tmpdir: () => "/tmp",
-}));
+let counter = 0;
 
-vi.mock("@/lib/db", () => ({
-  prisma: {
-    user: {
-      findUnique: vi.fn(),
+async function makeUser(opts: {
+  profileId: string | null;
+  model?: string | null;
+  chain?: unknown;
+}) {
+  const suffix = counter++;
+  return getPrismaClient().user.create({
+    data: {
+      username: `agy-${suffix}`,
+      email: `agy-${suffix}@example.test`,
+      timezone: "UTC",
+      aiProviderChain: opts.chain ?? AGY_CHAIN,
+      antigravityProfileId: opts.profileId,
+      antigravityModel: opts.model ?? null,
+      antigravityConnectionStatus: opts.profileId
+        ? "connected"
+        : "disconnected",
     },
-    appSettings: {
-      findUnique: vi.fn(),
-    },
-  },
-}));
-
-import { spawn } from "child_process";
-
-function createMockAcpProcess() {
-  const handlers: {
-    stdout: ((data: Buffer) => void)[];
-    stderr: ((data: Buffer) => void)[];
-    spawn: (() => void)[];
-    exit: ((code: number | null, signal: string | null) => void)[];
-  } = { stdout: [], stderr: [], spawn: [], exit: [] };
-
-  let stdinBuffer = "";
-
-  const proc = {
-    stdin: {
-      on: vi.fn(),
-      write: vi.fn((data: string) => {
-        stdinBuffer += data;
-        const lines = stdinBuffer.split("\n");
-        stdinBuffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            handleMockMessage(msg);
-          } catch {}
-        }
-      }),
-    },
-    stdout: {
-      on: vi.fn((event: string, handler: (data: Buffer) => void) => {
-        if (event === "data") handlers.stdout.push(handler);
-      }),
-    },
-    stderr: {
-      on: vi.fn(),
-      resume: vi.fn(),
-    },
-    pid: 4242,
-    exitCode: null as number | null,
-    signalCode: null as string | null,
-    on: vi.fn((event: string, handler: (...args: never[]) => void) => {
-      if (event === "exit")
-        handlers.exit.push(
-          handler as (code: number | null, signal: string | null) => void,
-        );
-      if (event === "spawn") {
-        handlers.spawn.push(handler as () => void);
-        setTimeout(() => handlers.spawn.forEach((h) => h()), 0);
-      }
-    }),
-    kill: vi.fn(() => {
-      setTimeout(() => handlers.exit.forEach((h) => h(0, null)), 10);
-    }),
-  };
-
-  function sendMessage(msg: unknown) {
-    const data = Buffer.from(JSON.stringify(msg) + "\n");
-    handlers.stdout.forEach((h) => h(data));
-  }
-
-  function handleMockMessage(msg: {
-    jsonrpc: string;
-    id?: number;
-    method?: string;
-    params?: unknown;
-  }) {
-    if (msg.method === "initialize") {
-      sendMessage({
-        jsonrpc: "2.0",
-        id: msg.id,
-        result: {
-          agentInfo: { name: "Mock Antigravity Agent" },
-          capabilities: {
-            promptCapabilities: { image: true, resourceBlob: true },
-          },
-        },
-      });
-    } else if (msg.method === "session/new") {
-      sendMessage({
-        jsonrpc: "2.0",
-        id: msg.id,
-        result: {
-          sessionId: "test-session-id",
-          configOptions: [
-            {
-              key: "model",
-              type: "select",
-              values: [
-                { value: "gemini-2.0-flash-exp", label: "Gemini 2.0 Flash" },
-              ],
-            },
-          ],
-        },
-      });
-    } else if (msg.method === "session/prompt") {
-      // Simulate streaming response
-      sendMessage({
-        jsonrpc: "2.0",
-        method: "session/update",
-        params: {
-          sessionId: "test-session-id",
-          update: {
-            sessionUpdate: "agent_message_chunk",
-            content: { type: "text", text: "Test response" },
-          },
-        },
-      });
-
-      sendMessage({
-        jsonrpc: "2.0",
-        id: msg.id,
-        result: { stopReason: "stop" },
-      });
-    }
-  }
-
-  return proc;
+  });
 }
 
-describe("Antigravity Provider Integration", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+describe("Antigravity provider chain (database and fake agy)", () => {
+  let fake: FakeAgy;
+
+  beforeAll(() => {
+    fake = installFakeAgy();
+    mkdirSync(path.join(fake.profileRoot, "prof-ready"));
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  afterAll(() => {
+    fake.cleanup();
   });
 
-  describe("Provider registration", () => {
-    it("resolves Antigravity in provider chain when configured", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({
-        aiProvider: "ANTIGRAVITY_CLI",
-        aiModel: null,
-        aiProviderChain: [
-          { providerType: "antigravity", priority: 1, enabled: true },
-        ],
-        codexAccessTokenEncrypted: null,
-        codexRefreshTokenEncrypted: null,
-        codexTokenExpiresAt: null,
-        codexConnectedAt: null,
-        codexConnectionStatus: "disconnected",
-        useCentralCodex: false,
-        aiAnthropicKeyEncrypted: null,
-        aiLocalKeyEncrypted: null,
-        aiOpenaiKeyEncrypted: null,
-        aiCompatBaseUrl: null,
-        aiCompatKeyEncrypted: null,
-        aiCompatModel: null,
-        antigravityProfileId: "test-profile",
-        antigravityModel: "gemini-2.0-flash-exp",
-        antigravityConnectionStatus: "connected",
-        antigravityConnectedAt: new Date(),
-        antigravityCapabilitiesJson: null,
-        aiBaseUrl: null,
-        aiResponseTimeoutSeconds: null,
-        labsLocalOcrEnabled: false,
-        labsAiFullConsent: false,
-      });
-
-      vi.mocked(prisma.appSettings.findUnique).mockResolvedValue({
-        adminAiModel: "gpt-4o-mini",
-        adminAiBaseUrl: "https://api.openai.com/v1",
-      });
-
-      // This tests that Antigravity is recognized in the chain
-      // Actual resolution depends on credentials and connection status
-      const result = await resolveProviderChain("test-user-id");
-
-      expect(result).toBeDefined();
-      expect(Array.isArray(result)).toBe(true);
-    });
-
-    it("does not break existing provider chain when Antigravity not configured", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({
-        aiProvider: "OPENAI",
-        aiModel: "gpt-4o",
-        aiProviderChain: null, // Legacy single-provider mode
-        codexAccessTokenEncrypted: null,
-        codexRefreshTokenEncrypted: null,
-        codexTokenExpiresAt: null,
-        codexConnectedAt: null,
-        codexConnectionStatus: "disconnected",
-        useCentralCodex: false,
-        aiAnthropicKeyEncrypted: null,
-        aiLocalKeyEncrypted: null,
-        aiOpenaiKeyEncrypted: "test-key-encrypted",
-        aiCompatBaseUrl: null,
-        aiCompatKeyEncrypted: null,
-        aiCompatModel: null,
-        antigravityProfileId: null,
-        antigravityModel: null,
-        antigravityConnectionStatus: "disconnected",
-        antigravityConnectedAt: null,
-        antigravityCapabilitiesJson: null,
-        aiBaseUrl: null,
-        aiResponseTimeoutSeconds: null,
-        labsLocalOcrEnabled: false,
-        labsAiFullConsent: false,
-      });
-
-      vi.mocked(prisma.appSettings.findUnique).mockResolvedValue({
-        adminAiModel: "gpt-4o-mini",
-        adminAiBaseUrl: "https://api.openai.com/v1",
-      });
-
-      const result = await resolveProviderChain("test-user-id");
-
-      // Should resolve without Antigravity
-      expect(result).toBeDefined();
-    });
+  beforeEach(async () => {
+    await truncateAllTables(getPrismaClient());
+    fake.reset();
   });
 
-  describe("Fallback behavior", () => {
-    it("falls back to next provider when Antigravity unavailable", async () => {
-      vi.mocked(prisma.user.findUnique).mockResolvedValue({
-        aiProvider: null,
-        aiModel: null,
-        aiProviderChain: [
-          { providerType: "antigravity", priority: 1, enabled: true },
-          { providerType: "openai", priority: 2, enabled: true },
-        ],
-        codexAccessTokenEncrypted: null,
-        codexRefreshTokenEncrypted: null,
-        codexTokenExpiresAt: null,
-        codexConnectedAt: null,
-        codexConnectionStatus: "disconnected",
-        useCentralCodex: false,
-        aiAnthropicKeyEncrypted: null,
-        aiLocalKeyEncrypted: null,
-        aiOpenaiKeyEncrypted: "test-key-encrypted",
-        aiCompatBaseUrl: null,
-        aiCompatKeyEncrypted: null,
-        aiCompatModel: null,
-        antigravityProfileId: null, // Not configured
-        antigravityModel: null,
-        antigravityConnectionStatus: "disconnected",
-        antigravityConnectedAt: null,
-        antigravityCapabilitiesJson: null,
-        aiBaseUrl: null,
-        aiResponseTimeoutSeconds: null,
-        labsLocalOcrEnabled: false,
-        labsAiFullConsent: false,
-      });
+  it("keeps Antigravity in the chain when the user's profile folder exists", async () => {
+    const user = await makeUser({ profileId: "prof-ready" });
 
-      vi.mocked(prisma.appSettings.findUnique).mockResolvedValue({
-        adminAiModel: "gpt-4o-mini",
-        adminAiBaseUrl: "https://api.openai.com/v1",
-      });
+    const chain = await resolveProviderChain(user.id);
 
-      const result = await resolveProviderChain("test-user-id");
-
-      // Should skip Antigravity and resolve OpenAI
-      expect(result).toBeDefined();
-    });
+    expect(chain.map((entry) => entry.providerType)).toEqual(["antigravity"]);
+    expect(chain[0].instance.type).toBe("antigravity");
+    expect(chain[0].instance.supportsTools).toBe(false);
   });
 
-  describe("Tool support", () => {
-    it("correctly reports supportsTools = false for Antigravity", async () => {
-      const client = new AntigravityClient();
+  it("drops Antigravity from the chain when the profile folder is missing", async () => {
+    const user = await makeUser({ profileId: "prof-not-created" });
 
-      expect(client.supportsTools).toBe(false);
-      expect(client.type).toBe("antigravity");
-    });
+    const chain = await resolveProviderChain(user.id);
+
+    expect(chain.map((entry) => entry.providerType)).not.toContain(
+      "antigravity",
+    );
   });
 
-  describe("Error handling", () => {
-    it("handles CLI unavailable gracefully", async () => {
-      vi.mocked(spawn).mockImplementation(() => {
-        throw new Error("agy not found");
-      });
+  it("drops Antigravity from the chain when the user has no profile", async () => {
+    const user = await makeUser({ profileId: null });
 
-      const client = new AntigravityClient();
+    const chain = await resolveProviderChain(user.id);
 
-      await expect(
-        client.generateCompletion({
-          messages: [{ role: "user", content: "test" }],
-        }),
-      ).rejects.toThrow("Failed to start agy");
+    expect(chain.map((entry) => entry.providerType)).not.toContain(
+      "antigravity",
+    );
+  });
+
+  it("sends the user's saved model to the CLI, and the reply comes from their profile", async () => {
+    const user = await makeUser({
+      profileId: "prof-ready",
+      model: "model-pro",
     });
 
-    it("handles authentication required error", async () => {
-      const mockProc = createMockAcpProcess();
+    const chain = await resolveProviderChain(user.id);
+    const result = await chain[0].instance.generateCompletion(
+      singleUserTurn({ system: "Be brief.", user: "Hello" }),
+    );
 
-      // Override to return auth required error
-      const originalHandleMockMessage = mockProc.stdin.write;
-      mockProc.stdin.write = vi.fn((data: string) => {
-        // Let original handler process the message
-        originalHandleMockMessage.call(mockProc.stdin, data);
-
-        // Check if it's initialize and respond with auth error
-        try {
-          const msg = JSON.parse(data.split("\n")[0]);
-          if (msg.method === "initialize") {
-            const sendData = Buffer.from(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id: msg.id,
-                error: {
-                  code: -32000,
-                  message: "Authentication required",
-                },
-              }) + "\n",
-            );
-            mockProc.stdout.on.mock.calls.forEach((call: unknown[]) => {
-              if (call[0] === "data") {
-                call[1](sendData);
-              }
-            });
-          }
-        } catch {}
-      });
-
-      vi.mocked(spawn).mockReturnValue(mockProc as unknown as ReturnType<typeof spawn>);
-
-      const client = new AntigravityClient();
-
-      await expect(
-        client.generateCompletion({
-          messages: [{ role: "user", content: "test" }],
-        }),
-      ).rejects.toThrow();
+    expect(result.content).toBe("profile:prof-ready");
+    expect(result.model).toBe("model-pro");
+    expect(fake.records()).toContainEqual({
+      kind: "model",
+      value: "model-pro",
     });
   });
 });
