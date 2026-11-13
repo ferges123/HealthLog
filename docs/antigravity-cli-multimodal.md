@@ -8,6 +8,7 @@
 ## Overview
 
 Antigravity CLI (`agy acp`) supports multimodal input through ACP v1 content blocks:
+
 - **Images**: PNG, JPEG, WebP via `image` content blocks
 - **PDFs**: via `resource` content blocks with embedded blob data
 
@@ -30,6 +31,7 @@ Images are sent as content blocks in `session/prompt`:
 ```
 
 **Requirements**:
+
 - `mimeType` field (required): One of `image/png`, `image/jpeg`, `image/webp`
 - `data` field (required): Base64-encoded image bytes (no data URL prefix)
 - `uri` field (optional): URI reference (not used in HealthLog)
@@ -102,6 +104,7 @@ PDFs are sent as `resource` blocks with embedded blob data:
 ```
 
 **Requirements**:
+
 - `uri` field (required): Unique identifier (HealthLog uses `healthlog://attachment-N.pdf`)
 - `mimeType` field (required): `application/pdf`
 - `blob` field (required): Base64-encoded PDF bytes
@@ -209,6 +212,7 @@ export function supportsPdfForProvider(
 **File**: `src/lib/ai/__tests__/antigravity-multimodal.test.ts`
 
 Test coverage:
+
 - ✅ Image acceptance when `promptCapabilities.image === true`
 - ✅ Image rejection when `promptCapabilities.image === false` or `undefined`
 - ✅ PDF acceptance when `promptCapabilities.resourceBlob === true`
@@ -229,6 +233,7 @@ pnpm test:antigravity-live
 ```
 
 **Fixtures**: `tests/fixtures/antigravity/documents/`
+
 - All synthetic, NO real medical data
 - Covers single/multi-page, scanned, lab results, damaged docs
 
@@ -237,25 +242,30 @@ pnpm test:antigravity-live
 ## Known Limitations
 
 ### 1. No Function Calling
+
 - ACP tools are for agent operations, not HealthLog function calling
 - `supportsTools = false` permanently
 - Coach switches to no-tools mode when Antigravity is in chain
 
 ### 2. No JSON Schema Enforcement
+
 - ACP does not support `--json-schema`
 - HealthLog uses prompt instructions + post-validation
 - No native response format forcing
 
 ### 3. PDF Reliability
+
 - Native PDF support depends on `resourceBlob` capability
 - Some models may not correctly read all pages
 - Fallback: User uploads photos of pages instead
 
 ### 4. Audio Not Supported
+
 - Not implemented in Stage 3
 - Not a health log priority use case
 
 ### 5. Capability Timing
+
 - `capabilities` may be `undefined` in `initialize` response
 - Fallback: Check during first `session/prompt`
 - Alternative: Query `configOptions` after `session/new`
@@ -267,6 +277,7 @@ pnpm test:antigravity-live
 ### 1. No Filesystem Access
 
 Images and PDFs are embedded in the JSON-RPC message:
+
 - No temporary files created
 - No local paths exposed
 - `@file` references NOT used
@@ -274,6 +285,7 @@ Images and PDFs are embedded in the JSON-RPC message:
 ### 2. Workspace Isolation
 
 Each completion runs in:
+
 - Empty temporary directory (`mkdtempSync`)
 - Deleted after completion (`rmSync`)
 - No access to HealthLog codebase
@@ -281,6 +293,7 @@ Each completion runs in:
 ### 3. Permission Rejection
 
 All `session/request_permission` calls are rejected:
+
 - Read/write permission requests denied
 - Terminal command requests denied
 - No exceptions

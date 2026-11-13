@@ -51,11 +51,7 @@ const PROFILE_ROOT_ENV = "ANTIGRAVITY_PROFILE_ROOT";
 const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** Image MIME types accepted by ACP `image` blocks. */
-const ALLOWED_IMAGE_MIMES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 /** Document MIME types accepted by ACP `resource` blocks. */
 const ALLOWED_DOCUMENT_MIMES = new Set(["application/pdf"]);

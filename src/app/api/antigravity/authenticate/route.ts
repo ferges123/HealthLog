@@ -45,7 +45,7 @@ export const POST = apiHandler(async () => {
 
   const existing = await prisma.user.findUnique({
     where: { id: caller.id },
-    select: { 
+    select: {
       antigravityProfileId: true,
       antigravityConnectionStatus: true,
     },

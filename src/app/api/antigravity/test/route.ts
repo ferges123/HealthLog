@@ -65,8 +65,7 @@ export const POST = apiHandler(async () => {
     where: { id: caller.id },
     data: {
       antigravityConnectionStatus: result.status,
-      antigravityConnectedAt:
-        result.status === "connected" ? new Date() : null,
+      antigravityConnectedAt: result.status === "connected" ? new Date() : null,
       antigravityCapabilitiesJson: result.capabilities
         ? { promptCapabilities: result.capabilities }
         : Prisma.DbNull,

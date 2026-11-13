@@ -24,13 +24,23 @@ This document captures the architecture audit for integrating Antigravity CLI (`
 HealthLog has two distinct type hierarchies:
 
 **`ProviderType`** (runtime, `src/lib/ai/types.ts:115-116`):
+
 ```typescript
-type ProviderType = "codex" | "admin-key" | "openai-compatible" | "anthropic" | "local" | "none";
+type ProviderType =
+  "codex" | "admin-key" | "openai-compatible" | "anthropic" | "local" | "none";
 ```
 
 **`ProviderChainType`** (fallback chain, `src/lib/ai/provider-chain.ts:57-65`):
+
 ```typescript
-type ProviderChainType = "codex" | "openai" | "anthropic" | "local" | "openai-compatible" | "admin-openai" | "admin-codex";
+type ProviderChainType =
+  | "codex"
+  | "openai"
+  | "anthropic"
+  | "local"
+  | "openai-compatible"
+  | "admin-openai"
+  | "admin-codex";
 ```
 
 **Key difference**: `ProviderChainType` includes admin variants (`admin-openai`, `admin-codex`) for fallback chain resolution, while `ProviderType` uses `admin-key` for direct key-based access.
@@ -47,16 +57,20 @@ interface AIProvider {
   supportsTools?: boolean;
   responseTimeoutSeconds?: number | null;
   reasoningEffort?: ReasoningEffort | null;
-  
+
   generateCompletion(params: CompletionParams): Promise<CompletionResult>;
-  generateCompletionStream?(params: CompletionParams, onDelta: (delta: string) => void): Promise<CompletionResult>;
+  generateCompletionStream?(
+    params: CompletionParams,
+    onDelta: (delta: string) => void,
+  ): Promise<CompletionResult>;
 }
 ```
 
 **Critical: `supportsTools` behavior** — Located at `src/lib/ai/coach/turn/chain.ts:47`:
+
 ```typescript
-const allSupportTools = chainEntries.every(entry => 
-  resolveProvider(entry).supportsTools !== false
+const allSupportTools = chainEntries.every(
+  (entry) => resolveProvider(entry).supportsTools !== false,
 );
 ```
 
@@ -66,17 +80,18 @@ const allSupportTools = chainEntries.every(entry =>
 
 ### 1.3 Provider Registration Pattern
 
-| Layer | File | Responsibility |
-|-------|------|----------------|
-| Types | `types.ts` | `ProviderType` union, `AIProvider` interface |
-| Chain | `provider-chain.ts` | `ProviderChainType`, `PROVIDER_CHAIN_TYPES`, `PROVIDER_CHAIN_DEFAULT` |
-| Resolver | `provider.ts` | `resolveProvider()`, provider construction, credential stores |
-| Runner | `provider-runner.ts` | Fallback execution, health ledger, budget checks |
-| Wire | `*-wire.ts`, `*-client.ts` | Protocol-specific message mapping |
+| Layer    | File                       | Responsibility                                                        |
+| -------- | -------------------------- | --------------------------------------------------------------------- |
+| Types    | `types.ts`                 | `ProviderType` union, `AIProvider` interface                          |
+| Chain    | `provider-chain.ts`        | `ProviderChainType`, `PROVIDER_CHAIN_TYPES`, `PROVIDER_CHAIN_DEFAULT` |
+| Resolver | `provider.ts`              | `resolveProvider()`, provider construction, credential stores         |
+| Runner   | `provider-runner.ts`       | Fallback execution, health ledger, budget checks                      |
+| Wire     | `*-wire.ts`, `*-client.ts` | Protocol-specific message mapping                                     |
 
 ### 1.4 Fallback Chain
 
 **Default chain** (`provider-chain.ts:92-98`):
+
 1. `codex` — ChatGPT subscription (cheapest, covered by user's sub)
 2. `openai` — User's OpenAI API key
 3. `anthropic` — User's Anthropic API key
@@ -92,6 +107,7 @@ const allSupportTools = chainEntries.every(entry =>
 ### 2.1 OAuth Token Management
 
 **Codex approach** (`codex-oauth.ts`):
+
 - Device-code OAuth flow with PKCE
 - Access/refresh tokens stored encrypted in PostgreSQL
 - Advisory lock coordination for refresh (`oauth-refresh.ts`)
@@ -99,12 +115,14 @@ const allSupportTools = chainEntries.every(entry =>
 - `codexAccessTokenEncrypted`, `codexRefreshTokenEncrypted`, `codexTokenExpiresAt`
 
 **Antigravity — DO NOT COPY**:
+
 - ACP has NO documented OAuth endpoint
 - No refresh token mechanism
 - Credentials live outside HealthLog DB
 - No `antigravityAccessTokenEncrypted` column
 
 **Decision**: Antigravity uses official CLI auth exclusively. HealthLog stores only:
+
 - `antigravityProfileId` — random identifier for profile isolation
 - `antigravityConnectionStatus` — last known state
 - `antigravityCapabilitiesJson` — cached capabilities (model, thought levels)
@@ -112,11 +130,13 @@ const allSupportTools = chainEntries.every(entry =>
 ### 2.2 Slug Fallback Chain
 
 **Codex approach** (`codex-slug-chain.ts`, `codex-slug-cache.ts`):
+
 - Model retirement detection (404 → fallback slug)
 - `WORKING_SLUG_TTL_MS = 3600000` (1 hour cache)
 - Predefined slug fallback order (GPT-5 → GPT-4.1 → GPT-4o)
 
 **Antigravity — DO NOT COPY**:
+
 - ACP provides `configOptions` with available models
 - No static catalog to cache
 - Model availability discovered at runtime
@@ -126,16 +146,19 @@ const allSupportTools = chainEntries.every(entry =>
 ### 2.3 Reasoning Summary Mapping
 
 **Codex approach** (`codex-reasoning-wire.ts`):
+
 - `response.reasoning_summary_text.delta` events
 - Maps directly to `CompletionResult.reasoning.summary[]`
 - `CODEX_ENDPOINT = "chatgpt.com/backend-api/codex/responses"`
 
 **Antigravity — DO NOT COPY**:
+
 - ACP `thought_level` is NOT the same as reasoning summaries
 - No documented `reasoning_summary` in ACP spec
 - Thought chunks may not be "verified summaries"
 
 **Decision**: Set `reasoningSupportForChainEntry("antigravity")` to indicate:
+
 - `effort`: only if confirmed by ACP capabilities
 - `summaries: false`
 - Do NOT map thought chunks to summaries without explicit capability
@@ -143,11 +166,13 @@ const allSupportTools = chainEntries.every(entry =>
 ### 2.4 Central Provider Pattern
 
 **Codex approach**:
+
 - `admin-codex` type for operator's shared ChatGPT account
 - `AppSettings.adminCodexAccessTokenEncrypted`
 - `User.useCentralCodex` opt-in flag
 
 **Antigravity — DO NOT COPY in Stage 1**:
+
 - No `admin-antigravity` type
 - No shared operator account
 - Each user gets isolated profile
@@ -160,13 +185,13 @@ const allSupportTools = chainEntries.every(entry =>
 
 ### 3.1 Current Provider Credential Storage
 
-| Provider | Storage | Columns |
-|----------|---------|---------|
-| Codex | PostgreSQL (encrypted) | `codexAccessTokenEncrypted`, `codexRefreshTokenEncrypted`, `codexTokenExpiresAt` |
-| OpenAI | PostgreSQL (encrypted) | `aiOpenaiKeyEncrypted` |
-| Anthropic | PostgreSQL (encrypted) | `aiAnthropicKeyEncrypted` |
-| Local | PostgreSQL (optional) | `aiLocalKeyEncrypted`, `aiLocalUrl` |
-| Gateway | PostgreSQL (encrypted) | `aiCompatKeyEncrypted`, `aiCompatBaseUrl`, `aiCompatModel` |
+| Provider  | Storage                | Columns                                                                          |
+| --------- | ---------------------- | -------------------------------------------------------------------------------- |
+| Codex     | PostgreSQL (encrypted) | `codexAccessTokenEncrypted`, `codexRefreshTokenEncrypted`, `codexTokenExpiresAt` |
+| OpenAI    | PostgreSQL (encrypted) | `aiOpenaiKeyEncrypted`                                                           |
+| Anthropic | PostgreSQL (encrypted) | `aiAnthropicKeyEncrypted`                                                        |
+| Local     | PostgreSQL (optional)  | `aiLocalKeyEncrypted`, `aiLocalUrl`                                              |
+| Gateway   | PostgreSQL (encrypted) | `aiCompatKeyEncrypted`, `aiCompatBaseUrl`, `aiCompatModel`                       |
 
 ### 3.2 Antigravity Profile Model
 
@@ -174,15 +199,16 @@ const allSupportTools = chainEntries.every(entry =>
 
 **Proposed fields on `User` model**:
 
-| Field | Type | Purpose |
-|-------|------|---------|
-| `antigravityProfileId` | String? | Random identifier (NOT path, NOT token) |
-| `antigravityModel` | String? | Last selected model |
-| `antigravityConnectionStatus` | String? | `unknown` / `connected` / `auth_required` / `disconnected` |
-| `antigravityConnectedAt` | DateTime? | Last successful connection |
-| `antigravityCapabilitiesJson` | Json? | Cached capabilities from last negotiation |
+| Field                         | Type      | Purpose                                                    |
+| ----------------------------- | --------- | ---------------------------------------------------------- |
+| `antigravityProfileId`        | String?   | Random identifier (NOT path, NOT token)                    |
+| `antigravityModel`            | String?   | Last selected model                                        |
+| `antigravityConnectionStatus` | String?   | `unknown` / `connected` / `auth_required` / `disconnected` |
+| `antigravityConnectedAt`      | DateTime? | Last successful connection                                 |
+| `antigravityCapabilitiesJson` | Json?     | Cached capabilities from last negotiation                  |
 
 **NOT stored**:
+
 - Access tokens
 - Refresh tokens
 - API keys
@@ -192,11 +218,13 @@ const allSupportTools = chainEntries.every(entry =>
 ### 3.3 Profile Isolation
 
 **Mechanism**: Use `--app-data-dir` flag with isolated directory per profile:
+
 ```
 /var/lib/healthlog/antigravity-profiles/<profile-id>/
 ```
 
 **Requirements**:
+
 - Directory created with `0700` permissions
 - Owned by `nextjs` user
 - Cleaned up when profile disconnected
@@ -211,6 +239,7 @@ run the login yet (Stages 4 and 5). Consent is required before the first call,
 like the other external providers.
 
 **Blockers to verify**:
+
 1. Does `--app-data-dir` isolate ALL state (cache, keyring, sessions)?
    It also must accept an absolute path. The transport decision records an
    earlier "must not be absolute" error that is still open.
@@ -225,24 +254,25 @@ like the other external providers.
 
 **Function**: `supportsVisionForConfig()` at `vision-capability.ts:104`
 
-| Provider | Vision Support |
-|----------|----------------|
-| `anthropic` | Claude 3/3.5/3.7/4+ |
-| `openai`, `admin-openai` | GPT-4o/4-turbo/5+, o1/o3/o4 |
-| `local`, `openai-compatible` | Trust-by-default |
-| `codex`, `admin-codex` | Depends on slug (multimodal check) |
-| `none` | false |
+| Provider                     | Vision Support                     |
+| ---------------------------- | ---------------------------------- |
+| `anthropic`                  | Claude 3/3.5/3.7/4+                |
+| `openai`, `admin-openai`     | GPT-4o/4-turbo/5+, o1/o3/o4        |
+| `local`, `openai-compatible` | Trust-by-default                   |
+| `codex`, `admin-codex`       | Depends on slug (multimodal check) |
+| `none`                       | false                              |
 
 ### 4.2 Current PDF Support
 
 **Function**: `supportsPdfForProvider()` at `vision-capability.ts:136`
 
-| Provider | Native PDF |
-|----------|-----------|
-| `anthropic` | ✅ Native document block |
-| All others | ❌ Rasterization fallback |
+| Provider    | Native PDF                |
+| ----------- | ------------------------- |
+| `anthropic` | ✅ Native document block  |
+| All others  | ❌ Rasterization fallback |
 
 **PDF Limits** (`rasterize-pdf.ts`):
+
 - `RASTER_MAX_PAGES = 10` (default)
 - `RASTER_HARD_MAX_PAGES = 20` (absolute max for lab scan)
 - `RASTER_TARGET_LONG_EDGE = 1600` px
@@ -252,14 +282,14 @@ like the other external providers.
 
 **Must verify in PoC**:
 
-| Capability | ACP Mechanism | Verification Needed |
-|------------|---------------|---------------------|
-| Images | `image` block with Base64 | Does model actually read image content? |
-| PDF | `resource.blob` with `application/pdf` | Does Antigravity analyze PDF bytes? |
-| Multi-page PDF | Unknown | Are all pages processed? |
-| Scanned PDF | Unknown | OCR capability? |
-| Audio | `promptCapabilities.audio` | Feature existence only |
-| JSON Schema | Not in ACP spec | Headless `--json-schema` only? |
+| Capability     | ACP Mechanism                          | Verification Needed                     |
+| -------------- | -------------------------------------- | --------------------------------------- |
+| Images         | `image` block with Base64              | Does model actually read image content? |
+| PDF            | `resource.blob` with `application/pdf` | Does Antigravity analyze PDF bytes?     |
+| Multi-page PDF | Unknown                                | Are all pages processed?                |
+| Scanned PDF    | Unknown                                | OCR capability?                         |
+| Audio          | `promptCapabilities.audio`             | Feature existence only                  |
+| JSON Schema    | Not in ACP spec                        | Headless `--json-schema` only?          |
 
 **Decision**: Do NOT claim multimodal support until PoC confirms actual processing.
 
@@ -289,6 +319,7 @@ like the other external providers.
 - Kinds: `ai_extraction`, `ai_insights_only`, `ai_full`
 
 **For Antigravity**:
+
 - `isExternalProvider("antigravity") === true` (data leaves instance)
 - Require consent before first use
 - Document that Antigravity is an external processor
@@ -297,12 +328,12 @@ like the other external providers.
 
 **Current**: `documentProviderRank` at `provider-rank.ts`
 
-| Rank | Providers | Rationale |
-|------|-----------|-----------|
-| 0 | `local` | No egress, data stays on device |
-| 1 | `openai`, `anthropic`, `admin-key`, `openai-compatible` | BYOK no-train API keys |
-| 2 | `admin-openai` | Operator's no-train key |
-| 3 | `codex`, `admin-codex` | ChatGPT OAuth, train-by-default |
+| Rank | Providers                                               | Rationale                       |
+| ---- | ------------------------------------------------------- | ------------------------------- |
+| 0    | `local`                                                 | No egress, data stays on device |
+| 1    | `openai`, `anthropic`, `admin-key`, `openai-compatible` | BYOK no-train API keys          |
+| 2    | `admin-openai`                                          | Operator's no-train key         |
+| 3    | `codex`, `admin-codex`                                  | ChatGPT OAuth, train-by-default |
 
 **For Antigravity**: Rank 3 (same as Codex). External account, potential training/interactions per Antigravity ToS.
 
@@ -313,6 +344,7 @@ like the other external providers.
 ### 6.1 Current Streaming Implementation
 
 **Providers with `generateCompletionStream()`**:
+
 - `LocalOpenAICompatibleClient` only (`local-client.ts:573-605`)
 
 **Codex behavior**: Always uses SSE internally (Responses API requires `stream: true`), but buffers complete response before returning. Does NOT implement `generateCompletionStream()`.
@@ -322,6 +354,7 @@ like the other external providers.
 **Mechanism**: `agent_message_chunk` events in ACP v1
 
 **Decision**: Implement `generateCompletionStream()` for Antigravity to support:
+
 - Slow background jobs
 - Better UX for long responses
 - Cancellation during generation
@@ -336,20 +369,21 @@ like the other external providers.
 
 **Function**: `classifyFailureKind()` in `failure-kind.ts`
 
-| Kind | HTTP Status | Cascade? |
-|------|-------------|----------|
-| `unauthorized` | 401 | Yes |
-| `forbidden` | 403 | Yes |
-| `rate_limited` | 429 | Yes + cooldown |
-| `upstream_error` | 5xx | Yes |
-| `cancelled` | — | No (log only) |
-| `content_filter` | 400 | No (return error) |
+| Kind             | HTTP Status | Cascade?          |
+| ---------------- | ----------- | ----------------- |
+| `unauthorized`   | 401         | Yes               |
+| `forbidden`      | 403         | Yes               |
+| `rate_limited`   | 429         | Yes + cooldown    |
+| `upstream_error` | 5xx         | Yes               |
+| `cancelled`      | —           | No (log only)     |
+| `content_filter` | 400         | No (return error) |
 
 ### 7.2 Antigravity Error Normalization
 
 **Challenge**: ACP uses JSON-RPC error codes, not HTTP status.
 
 **Decision**: Create normalization layer in `antigravity-errors.ts`:
+
 - Map JSON-RPC codes to `FailureKind`
 - Stable error classes: `cli_unavailable`, `cli_version_unsupported`, `auth_required`, `model_unavailable`, `permission_denied`
 - Never log raw stderr (may contain prompts, paths, account data)
@@ -358,25 +392,25 @@ like the other external providers.
 
 ## 8. Decision Matrix: Reuse vs Extend vs New
 
-| Area | Decision | Files |
-|------|----------|-------|
-| `ProviderType` | Extend | `types.ts` |
-| `ProviderChainType` | Extend | `provider-chain.ts` |
-| `AIProvider` interface | Reuse | `types.ts` |
-| Provider resolver | Extend | `provider.ts` |
-| Provider runner | Reuse | `provider-runner.ts` |
-| Health ledger | Reuse | `provider-health-ledger.ts` |
-| Consent guard | Reuse | `consent-guard.ts` |
-| Document ranking | Extend | `provider-rank.ts` |
-| Vision capability | Extend | `vision-capability.ts` |
-| OAuth flow | **DO NOT COPY** | N/A |
-| Slug fallback | **DO NOT COPY** | N/A |
-| Token storage | **DO NOT COPY** | N/A |
-| Reasoning wire | **DO NOT COPY** | N/A |
-| ACP client | **New** | `antigravity-client.ts` |
-| ACP runner | **New** | `antigravity-runner.ts` |
-| Capabilities | **New** | `antigravity-capabilities.ts` |
-| Error normalization | **New** | `antigravity-errors.ts` |
+| Area                   | Decision        | Files                         |
+| ---------------------- | --------------- | ----------------------------- |
+| `ProviderType`         | Extend          | `types.ts`                    |
+| `ProviderChainType`    | Extend          | `provider-chain.ts`           |
+| `AIProvider` interface | Reuse           | `types.ts`                    |
+| Provider resolver      | Extend          | `provider.ts`                 |
+| Provider runner        | Reuse           | `provider-runner.ts`          |
+| Health ledger          | Reuse           | `provider-health-ledger.ts`   |
+| Consent guard          | Reuse           | `consent-guard.ts`            |
+| Document ranking       | Extend          | `provider-rank.ts`            |
+| Vision capability      | Extend          | `vision-capability.ts`        |
+| OAuth flow             | **DO NOT COPY** | N/A                           |
+| Slug fallback          | **DO NOT COPY** | N/A                           |
+| Token storage          | **DO NOT COPY** | N/A                           |
+| Reasoning wire         | **DO NOT COPY** | N/A                           |
+| ACP client             | **New**         | `antigravity-client.ts`       |
+| ACP runner             | **New**         | `antigravity-runner.ts`       |
+| Capabilities           | **New**         | `antigravity-capabilities.ts` |
+| Error normalization    | **New**         | `antigravity-errors.ts`       |
 
 ---
 
@@ -473,7 +507,7 @@ src/components/admin/central-codex-section.tsx (no central Antigravity in Stage 
 ```prisma
 model User {
   // ... existing fields ...
-  
+
   // Antigravity CLI provider
   antigravityProfileId        String?
   antigravityModel            String?
@@ -491,32 +525,32 @@ model User {
 
 ### CompletionParams → ACP Mapping
 
-| HealthLog | ACP | Notes |
-|-----------|-----|-------|
-| `system` | `session/systemPrompt` or transcript | Verify native system prompt |
-| `messages` | Transcript in single `session/prompt` | NOT multiple `session/prompt` calls |
-| `temperature` | `configOptions` | May not be supported |
-| `maxTokens` | `configOptions` | Unknown parameter name |
-| `responseFormat: "json"` | Prompt instruction + validation | No native schema enforcement |
-| `tools`, `toolChoice` | **UNSUPPORTED** | `supportsTools = false` |
-| `reasoning.effort` | `thought_level` | Verify capability |
-| `reasoning.summaries` | **UNSUPPORTED** | Set to false |
-| `images` | `image` block with Base64 | Test actual processing |
-| `documents` | `resource.blob` or fallback raster | Test actual processing |
-| `signal` | `session/cancel` | Wire abort to cancel |
+| HealthLog                | ACP                                   | Notes                               |
+| ------------------------ | ------------------------------------- | ----------------------------------- |
+| `system`                 | `session/systemPrompt` or transcript  | Verify native system prompt         |
+| `messages`               | Transcript in single `session/prompt` | NOT multiple `session/prompt` calls |
+| `temperature`            | `configOptions`                       | May not be supported                |
+| `maxTokens`              | `configOptions`                       | Unknown parameter name              |
+| `responseFormat: "json"` | Prompt instruction + validation       | No native schema enforcement        |
+| `tools`, `toolChoice`    | **UNSUPPORTED**                       | `supportsTools = false`             |
+| `reasoning.effort`       | `thought_level`                       | Verify capability                   |
+| `reasoning.summaries`    | **UNSUPPORTED**                       | Set to false                        |
+| `images`                 | `image` block with Base64             | Test actual processing              |
+| `documents`              | `resource.blob` or fallback raster    | Test actual processing              |
+| `signal`                 | `session/cancel`                      | Wire abort to cancel                |
 
 ### CompletionResult ← ACP Mapping
 
-| HealthLog | ACP | Notes |
-|-----------|-----|-------|
-| `content` | `agent_message_chunk` aggregate | Stream or buffered |
-| `tokensUsed` | `usage` block | May be null |
-| `model` | Response metadata or config | Must be captured |
-| `providerType` | Hardcoded `"antigravity"` | |
-| `toolCalls` | **NEVER** | Not supported |
-| `finishReason` | `status` field | Map to `stop`/`length`/etc. |
-| `reasoning.summary` | **UNSUPPORTED** | Always empty |
-| `providerState` | `sessionId`? | Do NOT persist across requests |
+| HealthLog           | ACP                             | Notes                          |
+| ------------------- | ------------------------------- | ------------------------------ |
+| `content`           | `agent_message_chunk` aggregate | Stream or buffered             |
+| `tokensUsed`        | `usage` block                   | May be null                    |
+| `model`             | Response metadata or config     | Must be captured               |
+| `providerType`      | Hardcoded `"antigravity"`       |                                |
+| `toolCalls`         | **NEVER**                       | Not supported                  |
+| `finishReason`      | `status` field                  | Map to `stop`/`length`/etc.    |
+| `reasoning.summary` | **UNSUPPORTED**                 | Always empty                   |
+| `providerState`     | `sessionId`?                    | Do NOT persist across requests |
 
 ---
 
