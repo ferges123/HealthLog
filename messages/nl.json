@@ -238,44 +238,6 @@
       },
       "budget": {
         "exceeded": "Het AI-budget voor vandaag is op, dus er is niets verzonden. Morgen is het er weer."
-      },
-      "antigravity": {
-        "title": "Antigravity CLI",
-        "description": "Configureer Antigravity CLI (agy) als AI-provider. De CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-diensten.",
-        "connect": "Antigravity verbinden",
-        "follow_instructions": "Volg deze stappen om verbinding te maken:",
-        "instructions": [
-          "Om de Antigravity-instelling af te ronden, moet u zich authenticeren bij uw Antigravity-account:",
-          "",
-          "1. Voer het volgende commando uit in uw terminal:",
-          "   agy acp --login",
-          "",
-          "2. Er opent een browservenster voor aanmelding",
-          "3. Voltooi het authenticatieproces",
-          "4. Keer terug naar HealthLog en test de verbinding"
-        ],
-        "disconnect": "Verbinding verbreken",
-        "cli": "CLI",
-        "cli_status": {
-          "installed": "CLI-installatie",
-          "not_found": "Niet gevonden",
-          "version": "Versie {version}"
-        },
-        "connection_status": {
-          "disconnected": "Verbinding verbroken",
-          "connected": "Verbonden",
-          "auth_required": "Authenticatie vereist",
-          "error": "Fout",
-          "connected_at": "Verbonden: {date}"
-        },
-        "capabilities": {
-          "title": "Mogelijkheden",
-          "image": "Afbeeldingen",
-          "pdf_native": "PDF (Natuurlijk)",
-          "tools": "Hulpmiddelen",
-          "audio": "Audio"
-        },
-        "external_processing_warning": "De Antigravity CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-diensten voor verwerking. Zie de servicevoorwaarden van Antigravity voor details over gegevensverwerking."
       }
     },
     "passkey": {
@@ -6593,14 +6555,23 @@
         "capabilityPdfNative": "PDF (Natief)",
         "capabilityTools": "Tools",
         "capabilityAudio": "Audio",
-        "modelLabel": "Model",
-        "modelPlaceholder": "Selecteer een model",
-        "thinkingLevelLabel": "Denkniveau",
-        "thinkingLevelPlaceholder": "Selecteer denkniveau",
         "externalProcessingTitle": "Externe verwerking",
         "externalProcessingBody": "De Antigravity CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-services voor verwerking. Zie de servicevoorwaarden van Antigravity voor details over gegevensverwerking.",
         "connectButton": "Antigravity verbinden",
-        "disconnectButton": "Verbreken"
+        "disconnectButton": "Verbreken",
+        "reasonNotSetUp": "Verbind eerst Antigravity en voer daarna de verbindingstest uit.",
+        "reasonProfileMissing": "De profielmap ontbreekt op de server. Meld je opnieuw aan om hem aan te maken.",
+        "reasonTimeout": "De Antigravity-CLI reageerde niet op tijd. Voer de test opnieuw uit.",
+        "modelLabel": "Model",
+        "modelDefault": "Standaard van de CLI",
+        "modelDescription": "De modellen komen van de Antigravity-CLI voor je profiel. Standaard is het model dat de CLI kiest.",
+        "modelUnavailable": "De CLI biedt het opgeslagen model niet aan voor dit profiel. Kies een ander model.",
+        "noModels": "De CLI gaf geen modellen terug voor dit profiel. Voer de verbindingstest opnieuw uit.",
+        "disconnectTitle": "Antigravity loskoppelen?",
+        "disconnectBody": "HealthLog vergeet dit profiel en het gekozen model. De aanmelding blijft in de profielmap op de server tot een beheerder die verwijdert.",
+        "disconnectConfirm": "Loskoppelen",
+        "modelSaved": "Model opgeslagen.",
+        "reasonFailed": "De verbindingstest is mislukt. Probeer het opnieuw of vraag de beheerder de server te controleren."
       },
       "testProvider": "Actieve provider testen",
       "testSuccess": "OK: {provider} ({model})",

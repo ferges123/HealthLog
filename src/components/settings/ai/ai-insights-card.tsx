@@ -31,6 +31,7 @@ import { useTranslations } from "@/lib/i18n/context";
 import { queryKeys } from "@/lib/query-keys";
 
 import { AdminOpenAIProviderForm } from "./admin-openai-provider-form";
+import { AntigravityProviderForm } from "./antigravity-provider-form";
 import { AiConsentCard } from "./ai-consent-card";
 import { AiUsageCard } from "./ai-usage-card";
 import { AnthropicProviderForm } from "./anthropic-provider-form";
@@ -359,6 +360,7 @@ function ProviderConfigCard({
       {provider === "admin-openai" && (
         <AdminOpenAIProviderForm hasAdminKey={insightsSettings?.hasAdminKey} />
       )}
+      {provider === "antigravity" && <AntigravityProviderForm />}
     </div>
   );
 }

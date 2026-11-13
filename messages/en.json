@@ -238,44 +238,6 @@
       },
       "budget": {
         "exceeded": "Today's AI budget is used up, so nothing was sent. It renews tomorrow."
-      },
-      "antigravity": {
-        "title": "Antigravity CLI",
-        "description": "Configure Antigravity CLI (agy) as an AI provider. The CLI runs locally but sends data to Antigravity/Google services.",
-        "connect": "Connect Antigravity",
-        "follow_instructions": "Follow these steps to connect:",
-        "instructions": [
-          "To complete Antigravity setup, you need to authenticate with your Antigravity account:",
-          "",
-          "1. Run the following command in your terminal:",
-          "   agy acp --login",
-          "",
-          "2. A browser window will open for you to sign in",
-          "3. Complete the authentication flow",
-          "4. Return to HealthLog and test the connection"
-        ],
-        "disconnect": "Disconnect",
-        "cli": "CLI",
-        "cli_status": {
-          "installed": "CLI Installation",
-          "not_found": "Not found",
-          "version": "Version {version}"
-        },
-        "connection_status": {
-          "disconnected": "Disconnected",
-          "connected": "Connected",
-          "auth_required": "Authentication Required",
-          "error": "Error",
-          "connected_at": "Connected: {date}"
-        },
-        "capabilities": {
-          "title": "Capabilities",
-          "image": "Images",
-          "pdf_native": "PDF (Native)",
-          "tools": "Tools",
-          "audio": "Audio"
-        },
-        "external_processing_warning": "The Antigravity CLI runs locally but sends data to Antigravity/Google services for processing. See Antigravity's terms of service for data handling details."
       }
     },
     "passkey": {
@@ -6593,14 +6555,23 @@
         "capabilityPdfNative": "PDF (Native)",
         "capabilityTools": "Tools",
         "capabilityAudio": "Audio",
-        "modelLabel": "Model",
-        "modelPlaceholder": "Select a model",
-        "thinkingLevelLabel": "Thinking Level",
-        "thinkingLevelPlaceholder": "Select thinking level",
         "externalProcessingTitle": "External Processing",
         "externalProcessingBody": "The Antigravity CLI runs locally but sends data to Antigravity/Google services for processing. See Antigravity's terms of service for data handling details.",
         "connectButton": "Connect Antigravity",
-        "disconnectButton": "Disconnect"
+        "disconnectButton": "Disconnect",
+        "reasonNotSetUp": "Connect Antigravity first, then run the connection test.",
+        "reasonProfileMissing": "The profile folder is missing on the server. Sign in again to create it.",
+        "reasonTimeout": "The Antigravity CLI did not answer in time. Run the test again.",
+        "modelLabel": "Model",
+        "modelDefault": "CLI default",
+        "modelDescription": "Models come from the Antigravity CLI for your profile. The default is the model the CLI picks.",
+        "modelUnavailable": "The saved model is not offered by the CLI for this profile. Pick another model.",
+        "noModels": "The CLI did not list any models for this profile. Run the connection test again.",
+        "disconnectTitle": "Disconnect Antigravity?",
+        "disconnectBody": "HealthLog forgets this profile and the chosen model. The login stays in the profile folder on the server until an operator deletes it.",
+        "disconnectConfirm": "Disconnect",
+        "modelSaved": "Model saved.",
+        "reasonFailed": "The connection test failed. Try again, or ask the operator to check the server."
       },
       "testProvider": "Test active provider",
       "testSuccess": "OK: {provider} ({model})",

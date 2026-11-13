@@ -238,44 +238,6 @@
       },
       "budget": {
         "exceeded": "Бюджет ИИ на сегодня исчерпан, поэтому ничего не отправлено. Он обновится завтра."
-      },
-      "antigravity": {
-        "title": "Antigravity CLI",
-        "description": "Настройте Antigravity CLI (agy) как поставщик ИИ. CLI работает локально, но отправляет данные в сервисы Antigravity/Google.",
-        "connect": "Подключить Antigravity",
-        "follow_instructions": "Выполните эти шаги для подключения:",
-        "instructions": [
-          "Для завершения настройки Antigravity необходимо пройти аутентификацию в своей учетной записи Antigravity:",
-          "",
-          "1. Выполните следующую команду в терминале:",
-          "   agy acp --login",
-          "",
-          "2. Откроется окно браузера для входа",
-          "3. Завершите процесс аутентификации",
-          "4. Вернитесь в HealthLog и протестируйте соединение"
-        ],
-        "disconnect": "Отключить",
-        "cli": "CLI",
-        "cli_status": {
-          "installed": "Установка CLI",
-          "not_found": "Не найдено",
-          "version": "Версия {version}"
-        },
-        "connection_status": {
-          "disconnected": "Отключен",
-          "connected": "Подключен",
-          "auth_required": "Требуется аутентификация",
-          "error": "Ошибка",
-          "connected_at": "Подключен: {date}"
-        },
-        "capabilities": {
-          "title": "Возможности",
-          "image": "Изображения",
-          "pdf_native": "PDF (Нативный)",
-          "tools": "Инструменты",
-          "audio": "Аудио"
-        },
-        "external_processing_warning": "CLI Antigravity работает локально, но отправляет данные в сервисы Antigravity/Google для обработки. Подробности об обработке данных см. в условиях обслуживания Antigravity."
       }
     },
     "passkey": {
@@ -6593,14 +6555,23 @@
         "capabilityPdfNative": "PDF (Нативный)",
         "capabilityTools": "Инструменты",
         "capabilityAudio": "Аудио",
-        "modelLabel": "Модель",
-        "modelPlaceholder": "Выберите модель",
-        "thinkingLevelLabel": "Уровень мышления",
-        "thinkingLevelPlaceholder": "Выберите уровень мышления",
         "externalProcessingTitle": "Внешняя обработка",
         "externalProcessingBody": "Antigravity CLI работает локально, но отправляет данные в сервисы Antigravity/Google для обработки. Подробности об обработке данных см. в условиях использования Antigravity.",
         "connectButton": "Подключить Antigravity",
-        "disconnectButton": "Отключить"
+        "disconnectButton": "Отключить",
+        "reasonNotSetUp": "Сначала подключите Antigravity, затем запустите проверку подключения.",
+        "reasonProfileMissing": "На сервере нет папки профиля. Войдите снова, чтобы она создалась.",
+        "reasonTimeout": "CLI Antigravity не ответила вовремя. Запустите проверку ещё раз.",
+        "modelLabel": "Модель",
+        "modelDefault": "По умолчанию в CLI",
+        "modelDescription": "Модели предоставляет CLI Antigravity для вашего профиля. По умолчанию используется модель, которую выбирает CLI.",
+        "modelUnavailable": "CLI не предлагает сохранённую модель для этого профиля. Выберите другую модель.",
+        "noModels": "CLI не вернул ни одной модели для этого профиля. Повторите проверку подключения.",
+        "disconnectTitle": "Отключить Antigravity?",
+        "disconnectBody": "HealthLog забудет этот профиль и выбранную модель. Вход останется в папке профиля на сервере, пока оператор её не удалит.",
+        "disconnectConfirm": "Отключить",
+        "modelSaved": "Модель сохранена.",
+        "reasonFailed": "Проверка подключения не удалась. Повторите попытку или попросите оператора проверить сервер."
       },
       "testProvider": "Проверить активного провайдера",
       "testSuccess": "OK: {provider} ({model})",

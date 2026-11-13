@@ -238,44 +238,6 @@
       },
       "budget": {
         "exceeded": "오늘의 AI 예산을 모두 사용해서 아무것도 보내지 않았어요. 내일 다시 채워져요."
-      },
-      "antigravity": {
-        "title": "Antigravity CLI",
-        "description": "Antigravity CLI(agy)를 AI 공급자로 설정하세요. CLI는 로컬에서 실행되지만 Antigravity/Google 서비스로 데이터를 보냅니다.",
-        "connect": "Antigravity 연결",
-        "follow_instructions": "다음 단계를 따라 연결하세요:",
-        "instructions": [
-          "Antigravity 설정을 완료하려면 Antigravity 계정으로 인증해야 합니다:",
-          "",
-          "1. 터미널에서 다음 명령을 실행하세요:",
-          "   agy acp --login",
-          "",
-          "2. 브라우저 창이 열려 로그인할 수 있습니다",
-          "3. 인증 흐름을 완료하세요",
-          "4. HealthLog로 돌아와 연결을 테스트하세요"
-        ],
-        "disconnect": "연결 해제",
-        "cli": "CLI",
-        "cli_status": {
-          "installed": "CLI 설치",
-          "not_found": "찾을 수 없음",
-          "version": "버전 {version}"
-        },
-        "connection_status": {
-          "disconnected": "연결 해제됨",
-          "connected": "연결됨",
-          "auth_required": "인증 필요",
-          "error": "오류",
-          "connected_at": "연결됨: {date}"
-        },
-        "capabilities": {
-          "title": "기능",
-          "image": "이미지",
-          "pdf_native": "PDF (네이티브)",
-          "tools": "도구",
-          "audio": "오디오"
-        },
-        "external_processing_warning": "Antigravity CLI는 로컬에서 실행되지만 Antigravity/Google 서비스로 데이터를 보내 처리합니다. 데이터 처리에 대한 자세한 내용은 Antigravity의 서비스 약관을 참조하세요."
       }
     },
     "passkey": {
@@ -6593,14 +6555,23 @@
         "capabilityPdfNative": "PDF (네이티브)",
         "capabilityTools": "도구",
         "capabilityAudio": "오디오",
-        "modelLabel": "모델",
-        "modelPlaceholder": "모델 선택",
-        "thinkingLevelLabel": "사고 수준",
-        "thinkingLevelPlaceholder": "사고 수준 선택",
         "externalProcessingTitle": "외부 처리",
         "externalProcessingBody": "Antigravity CLI는 로컬에서 실행되지만 처리를 위해 Antigravity/Google 서비스로 데이터를 전송합니다. 데이터 처리 세부 정보는 Antigravity의 서비스 약관을 참조하세요.",
         "connectButton": "Antigravity 연결",
-        "disconnectButton": "연결 끊기"
+        "disconnectButton": "연결 끊기",
+        "reasonNotSetUp": "먼저 Antigravity를 연결한 뒤 연결 테스트를 실행하세요.",
+        "reasonProfileMissing": "서버에 프로필 폴더가 없습니다. 다시 로그인하면 폴더가 만들어집니다.",
+        "reasonTimeout": "Antigravity CLI가 제때 응답하지 않았습니다. 테스트를 다시 실행하세요.",
+        "modelLabel": "모델",
+        "modelDefault": "CLI 기본값",
+        "modelDescription": "모델 목록은 프로필에 대해 Antigravity CLI에서 가져옵니다. 기본값은 CLI가 선택한 모델입니다.",
+        "modelUnavailable": "저장된 모델은 이 프로필에서 CLI가 제공하지 않습니다. 다른 모델을 선택하세요.",
+        "noModels": "CLI가 이 프로필의 모델을 하나도 반환하지 않았습니다. 연결 테스트를 다시 실행하세요.",
+        "disconnectTitle": "Antigravity 연결을 해제할까요?",
+        "disconnectBody": "HealthLog는 이 프로필과 선택한 모델을 잊습니다. 운영자가 삭제하기 전까지 로그인 정보는 서버의 프로필 폴더에 남습니다.",
+        "disconnectConfirm": "연결 해제",
+        "modelSaved": "모델이 저장되었습니다.",
+        "reasonFailed": "연결 테스트에 실패했습니다. 다시 시도하거나 운영자에게 서버 확인을 요청하세요."
       },
       "testProvider": "사용 중인 제공자 테스트",
       "testSuccess": "정상: {provider} ({model})",

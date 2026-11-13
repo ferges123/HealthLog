@@ -238,44 +238,6 @@
       },
       "budget": {
         "exceeded": "Das KI-Budget für heute ist aufgebraucht, daher wurde nichts gesendet. Morgen steht es wieder bereit."
-      },
-      "antigravity": {
-        "title": "Antigravity CLI",
-        "description": "Richten Sie Antigravity CLI (agy) als KI-Anbieter ein. Die CLI läuft lokal, sendet aber Daten an Antigravity/Google-Dienste.",
-        "connect": "Antigravity verbinden",
-        "follow_instructions": "Folgen Sie diesen Schritten zur Verbindung:",
-        "instructions": [
-          "Um die Antigravity-Einrichtung abzuschließen, müssen Sie sich bei Ihrem Antigravity-Konto authentifizieren:",
-          "",
-          "1. Führen Sie den folgenden Befehl in Ihrem Terminal aus:",
-          "   agy acp --login",
-          "",
-          "2. Ein Browserfenster öffnet sich für Ihre Anmeldung",
-          "3. Führen Sie den Authentifizierungsprozess aus",
-          "4. Kehren Sie zu HealthLog zurück und testen Sie die Verbindung"
-        ],
-        "disconnect": "Trennen",
-        "cli": "CLI",
-        "cli_status": {
-          "installed": "CLI-Installation",
-          "not_found": "Nicht gefunden",
-          "version": "Version {version}"
-        },
-        "connection_status": {
-          "disconnected": "Getrennt",
-          "connected": "Verbunden",
-          "auth_required": "Authentifizierung erforderlich",
-          "error": "Fehler",
-          "connected_at": "Verbunden: {date}"
-        },
-        "capabilities": {
-          "title": "Funktionen",
-          "image": "Bilder",
-          "pdf_native": "PDF (Native)",
-          "tools": "Tools",
-          "audio": "Audio"
-        },
-        "external_processing_warning": "Die Antigravity CLI läuft lokal, sendet aber Daten an Antigravity/Google-Dienste zur Verarbeitung. Weitere Informationen zur Datenverarbeitung finden Sie in den Nutzungsbedingungen von Antigravity."
       }
     },
     "passkey": {
@@ -6593,14 +6555,23 @@
         "capabilityPdfNative": "PDF (Nativ)",
         "capabilityTools": "Tools",
         "capabilityAudio": "Audio",
-        "modelLabel": "Modell",
-        "modelPlaceholder": "Modell auswählen",
-        "thinkingLevelLabel": "Denktiefe",
-        "thinkingLevelPlaceholder": "Denktiefe auswählen",
         "externalProcessingTitle": "Externe Verarbeitung",
         "externalProcessingBody": "Die Antigravity CLI läuft lokal, sendet aber Daten zur Verarbeitung an Antigravity/Google-Dienste. Weitere Informationen zum Umgang mit Daten finden Sie in den Nutzungsbedingungen von Antigravity.",
         "connectButton": "Antigravity verbinden",
-        "disconnectButton": "Trennen"
+        "disconnectButton": "Trennen",
+        "reasonNotSetUp": "Verbinde Antigravity zuerst und starte dann den Verbindungstest.",
+        "reasonProfileMissing": "Der Profilordner fehlt auf dem Server. Melde dich erneut an, damit er angelegt wird.",
+        "reasonTimeout": "Die Antigravity-CLI hat nicht rechtzeitig geantwortet. Starte den Test erneut.",
+        "modelLabel": "Modell",
+        "modelDefault": "Standard der CLI",
+        "modelDescription": "Die Modelle stammen von der Antigravity CLI für Ihr Profil. Standard ist das Modell, das die CLI wählt.",
+        "modelUnavailable": "Das gespeicherte Modell wird von der CLI für dieses Profil nicht angeboten. Wählen Sie ein anderes Modell.",
+        "noModels": "Die CLI hat für dieses Profil keine Modelle gemeldet. Führen Sie den Verbindungstest erneut aus.",
+        "disconnectTitle": "Antigravity trennen?",
+        "disconnectBody": "HealthLog vergisst dieses Profil und das gewählte Modell. Die Anmeldung bleibt im Profilordner auf dem Server, bis ein Betreiber sie löscht.",
+        "disconnectConfirm": "Trennen",
+        "modelSaved": "Modell gespeichert.",
+        "reasonFailed": "Der Verbindungstest ist fehlgeschlagen. Versuche es erneut oder bitte den Betreiber, den Server zu prüfen."
       },
       "testProvider": "Aktiven Anbieter testen",
       "testSuccess": "OK: {provider} ({model})",

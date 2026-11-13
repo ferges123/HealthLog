@@ -63,6 +63,7 @@ export const PROVIDER_TYPES = [
   "local",
   "openai-compatible",
   "admin-openai",
+  "antigravity",
 ] as const;
 export type ProviderType = (typeof PROVIDER_TYPES)[number];
 
