@@ -224,8 +224,9 @@ describe("release container inputs", () => {
     const dockerfile = readRepoFile("Dockerfile");
     const fromLines = dockerfile.match(/^FROM node:[^\n]+$/gm) ?? [];
 
-    // deps, builder, the prisma-cli install and the runner.
-    expect(fromLines).toHaveLength(4);
+    // deps, builder, the prisma-cli install, the Antigravity CLI download and
+    // the runner.
+    expect(fromLines).toHaveLength(5);
     expect(new Set(fromLines.map((line) => line.split(" AS ")[0]))).toEqual(
       new Set([
         "FROM node:22-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6",

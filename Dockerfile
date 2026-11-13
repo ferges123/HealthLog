@@ -180,15 +180,15 @@ RUN apt-get update && \
 RUN set -eux; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
-        amd64) sha256="$AGY_SHA256_AMD64" ;; \
-        arm64) sha256="$AGY_SHA256_ARM64" ;; \
+        amd64) asset="x64"; sha256="$AGY_SHA256_AMD64" ;; \
+        arm64) asset="arm64"; sha256="$AGY_SHA256_ARM64" ;; \
         *) echo "ERROR: Unsupported architecture $arch"; exit 1 ;; \
     esac; \
-    url="https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/agy_cli_linux_${arch}.tar.gz"; \
+    url="https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/agy_cli_linux_${asset}.tar.gz"; \
     wget -O /tmp/agy.tar.gz "$url"; \
     echo "$sha256  /tmp/agy.tar.gz" | sha256sum -c -; \
-    tar -xzf /tmp/agy.tar.gz -C /tmp; \
-    mv /tmp/agy /usr/local/bin/agy; \
+    tar -xzf /tmp/agy.tar.gz -C /tmp antigravity; \
+    mv /tmp/antigravity /usr/local/bin/agy; \
     chmod 755 /usr/local/bin/agy; \
     agy --version; \
     rm -f /tmp/agy.tar.gz

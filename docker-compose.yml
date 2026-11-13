@@ -143,6 +143,11 @@ x-healthlog-env: &healthlog_env
   # value in .env reaches the container (the `environment:` block is a
   # whitelist). See docs/self-hosting/geolite2.md.
   GEOLITE2_DIR: "${GEOLITE2_DIR:-/opt/geolite2}"
+  # Antigravity CLI profile root: one folder per user, holding the CLI login.
+  # The image creates the default path. Listed here so an operator value in
+  # .env reaches the container (the `environment:` block is a whitelist).
+  # See docs/self-hosting/antigravity-cli.md.
+  ANTIGRAVITY_PROFILE_ROOT: "${ANTIGRAVITY_PROFILE_ROOT:-/var/lib/healthlog/antigravity}"
   # MaxMind licence key for the RUNTIME GeoLite2 fetch (issue #659). Set this
   # and the worker downloads GeoLite2-City + GeoLite2-ASN itself into
   # GEOLITE2_DIR on the next boot and monthly thereafter — no image rebuild,

@@ -77,6 +77,9 @@ describe("canvas binary hoist", () => {
         /^FROM postgres:18\.\d+-trixie@sha256:[0-9a-f]{64} AS pgclient$/,
       ),
       expect.stringMatching(
+        /^FROM node:22-trixie-slim@sha256:[0-9a-f]{64} AS agy-cli$/,
+      ),
+      expect.stringMatching(
         /^FROM node:22-trixie-slim@sha256:[0-9a-f]{64} AS runner$/,
       ),
     ]);
