@@ -834,6 +834,7 @@ export async function resolveProviderChain(
       aiCompatBaseUrl: true,
       aiCompatKeyEncrypted: true,
       aiCompatModel: true,
+      antigravityProfileId: true,
       role: true,
       aiProviderChain: true,
       useCentralCodex: true,
@@ -1013,6 +1014,7 @@ const PRESENCE_USER_SELECT = {
   aiCompatBaseUrl: true,
   aiCompatModel: true,
   aiModel: true,
+  antigravityProfileId: true,
   codexConnectionStatus: true,
   codexAccessTokenEncrypted: true,
   codexRefreshTokenEncrypted: true,
@@ -1125,8 +1127,15 @@ export function probeProviderChain(
             );
           case "admin-openai":
             return adminKey;
-          case "antigravity":
-            return antigravityProfileDir(recordId) !== null;
+          case "antigravity": {
+            // v1.48.0 — Antigravity CLI provider. Credentials stay in the CLI's own
+            // profile directory, never in the DB. Without a profile for this user the
+            // CLI would run under the server's shared login, so the provider stays off.
+            const profileId = row.antigravityProfileId;
+            if (!profileId) return false;
+            const profileDir = antigravityProfileDir(profileId);
+            return profileDir !== null;
+          }
           default:
             // `admin-codex` is never resolved from a stored chain entry.
             return false;
@@ -1203,6 +1212,7 @@ async function resolveProviderForType(
       aiCompatBaseUrl: string | null;
       aiCompatKeyEncrypted: string | null;
       aiCompatModel: string | null;
+      antigravityProfileId: string | null;
       role: string;
     } | null;
     policy: ProviderCredentialPolicy;
@@ -1271,7 +1281,10 @@ async function resolveProviderForType(
       // v1.48.0 — Antigravity CLI provider. Credentials stay in the CLI's own
       // profile directory, never in the DB. Without a profile for this user the
       // CLI would run under the server's shared login, so the provider stays off.
-      const profileDir = antigravityProfileDir(ctx.userId);
+      if (!ctx.userRow) return null;
+      const profileId = ctx.userRow.antigravityProfileId;
+      if (!profileId) return null;
+      const profileDir = antigravityProfileDir(profileId);
       if (!profileDir) return null;
       const { AntigravityClient } = await import("./antigravity-client");
       return new AntigravityClient({ profileDir });
@@ -1349,6 +1362,7 @@ async function resolveProviderForTestUnbound(
       aiCompatBaseUrl: true,
       aiCompatKeyEncrypted: true,
       aiCompatModel: true,
+      antigravityProfileId: true,
       role: true,
     },
   });

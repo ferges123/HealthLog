@@ -238,6 +238,44 @@
       },
       "budget": {
         "exceeded": "Le budget IA du jour est épuisé, rien n’a donc été envoyé. Il se renouvelle demain."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configurez Antigravity CLI (agy) comme fournisseur d'IA. La CLI s'exécute localement mais envoie des données aux services Antigravity/Google.",
+        "connect": "Connecter Antigravity",
+        "follow_instructions": "Suivez ces étapes pour vous connecter :",
+        "instructions": [
+          "Pour terminer la configuration Antigravity, vous devez vous authentifier avec votre compte Antigravity :",
+          "",
+          "1. Exécutez la commande suivante dans votre terminal :",
+          "   agy acp --login",
+          "",
+          "2. Une fenêtre de navigateur s'ouvre pour votre connexion",
+          "3. Terminez le flux d'authentification",
+          "4. Revenez à HealthLog et testez la connexion"
+        ],
+        "disconnect": "Déconnecter",
+        "cli": "CLI",
+        "cli_status": {
+          "installed": "Installation CLI",
+          "not_found": "Non trouvé",
+          "version": "Version {version}"
+        },
+        "connection_status": {
+          "disconnected": "Déconnecté",
+          "connected": "Connecté",
+          "auth_required": "Authentification requise",
+          "error": "Erreur",
+          "connected_at": "Connecté : {date}"
+        },
+        "capabilities": {
+          "title": "Fonctionnalités",
+          "image": "Images",
+          "pdf_native": "PDF (Native)",
+          "tools": "Outils",
+          "audio": "Audio"
+        },
+        "external_processing_warning": "La CLI Antigravity s'exécute localement mais envoie des données aux services Antigravity/Google pour traitement. Voir les conditions d'utilisation d'Antigravity pour les détails sur le traitement des données."
       }
     },
     "passkey": {
@@ -6548,7 +6586,7 @@
         "statusConnected": "Connecté",
         "statusAuthRequired": "Authentification requise",
         "statusError": "Erreur",
-        "connectedAt": "Connecté\u00a0: {when}",
+        "connectedAt": "Connecté : {when}",
         "testConnection": "Tester la connexion",
         "capabilities": "Capacités",
         "capabilityImages": "Images",

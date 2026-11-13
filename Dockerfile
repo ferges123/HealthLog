@@ -169,8 +169,8 @@ RUN set -eu; \
 FROM node:22-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6 AS agy-cli
 
 ARG AGY_VERSION=1.5.8
-ARG AGY_SHA256_AMD64=b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9a2c5d8e7f6a9b2c5d8e7f4a1
-ARG AGY_SHA256_ARM64=a2c5d8e7f6a9b2c5d8e7f4a1b15742e3e8c8f98e2e95f5c8e2a9e8f4c7b3e8f9
+ARG AGY_SHA256_AMD64=905d4accfbd61bc00bee84bfaf24c59b85d334cabd786cf99237b66cfe06ab98
+ARG AGY_SHA256_ARM64=0ca407357661aa244fbc3b0e79a1d1d2623b2ca1515d2e2f77a801c3676bd562
 
 # Install wget for downloading the CLI binary
 RUN apt-get update && \
@@ -184,11 +184,14 @@ RUN set -eux; \
         arm64) sha256="$AGY_SHA256_ARM64" ;; \
         *) echo "ERROR: Unsupported architecture $arch"; exit 1 ;; \
     esac; \
-    url="https://github.com/anthropics/antigravity-cli/releases/download/v${AGY_VERSION}/agy-${arch}-unknown-linux-gnu"; \
-    wget -O /usr/local/bin/agy "$url"; \
-    echo "$sha256  /usr/local/bin/agy" | sha256sum -c -; \
+    url="https://github.com/google-antigravity/antigravity-cli/releases/download/${AGY_VERSION}/agy_cli_linux_${arch}.tar.gz"; \
+    wget -O /tmp/agy.tar.gz "$url"; \
+    echo "$sha256  /tmp/agy.tar.gz" | sha256sum -c -; \
+    tar -xzf /tmp/agy.tar.gz -C /tmp; \
+    mv /tmp/agy /usr/local/bin/agy; \
     chmod 755 /usr/local/bin/agy; \
-    agy --version
+    agy --version; \
+    rm -f /tmp/agy.tar.gz
 
 # ── Stage 6: Production runner ─────────────────────────────
 FROM node:22-trixie-slim@sha256:be1e2a3dc2c4fd68cdfadad2a696a280e0d2749098bee509230174d72fb768c6 AS runner

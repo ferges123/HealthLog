@@ -97,11 +97,16 @@ const ROLE_LABEL: Record<AiMessage["role"], string> = {
  * the CLI would fall back to the server's login, which every user shares.
  *
  * The directory must already exist. Nothing in HealthLog creates it yet.
+ *
+ * IMPORTANT: When ANTIGRAVITY_PROFILE_ROOT is set, HealthLog stores a
+ * profileId (32-char hex) in the user record and uses that as the directory
+ * name, NOT the user's database ID. This function accepts the stored
+ * profileId, not the database userId.
  */
-export function antigravityProfileDir(userId: string): string | null {
+export function antigravityProfileDir(profileId: string): string | null {
   const root = process.env[PROFILE_ROOT_ENV];
-  if (!root || !isAbsolute(root) || !USER_ID_PATTERN.test(userId)) return null;
-  const dir = join(root, userId);
+  if (!root || !isAbsolute(root) || !USER_ID_PATTERN.test(profileId)) return null;
+  const dir = join(root, profileId);
   return existsSync(dir) ? dir : null;
 }
 

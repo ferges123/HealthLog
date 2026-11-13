@@ -238,6 +238,44 @@
       },
       "budget": {
         "exceeded": "Il budget IA di oggi è esaurito, quindi non è stato inviato nulla. Si rinnova domani."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configura Antigravity CLI (agy) come provider AI. La CLI viene eseguita localmente ma invia dati ai servizi Antigravity/Google.",
+        "connect": "Connetti Antigravity",
+        "follow_instructions": "Segui questi passaggi per connetterti:",
+        "instructions": [
+          "Per completare la configurazione di Antigravity, devi autenticarti con il tuo account Antigravity:",
+          "",
+          "1. Esegui il seguente comando nel tuo terminale:",
+          "   agy acp --login",
+          "",
+          "2. Si aprirà una finestra del browser per l'accesso",
+          "3. Completa il flusso di autenticazione",
+          "4. Ritorna a HealthLog e testa la connessione"
+        ],
+        "disconnect": "Disconnetti",
+        "cli": "CLI",
+        "cli_status": {
+          "installed": "Installazione CLI",
+          "not_found": "Non trovato",
+          "version": "Versione {version}"
+        },
+        "connection_status": {
+          "disconnected": "Disconnesso",
+          "connected": "Connesso",
+          "auth_required": "Autenticazione richiesta",
+          "error": "Errore",
+          "connected_at": "Connesso: {date}"
+        },
+        "capabilities": {
+          "title": "Funzionalità",
+          "image": "Immagini",
+          "pdf_native": "PDF (Nativo)",
+          "tools": "Strumenti",
+          "audio": "Audio"
+        },
+        "external_processing_warning": "La CLI di Antigravity viene eseguita localmente ma invia dati ai servizi Antigravity/Google per l'elaborazione. Vedere i termini di servizio di Antigravity per i dettagli sul trattamento dei dati."
       }
     },
     "passkey": {

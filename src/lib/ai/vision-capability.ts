@@ -126,10 +126,10 @@ export function supportsVisionForConfig(
     case "admin-codex":
       return model ? openAIFamilySupportsVision(model) : false;
     case "antigravity":
-      // Stage 3: Image support confirmed via ACP promptCapabilities.image
-      // PDF native support depends on runtime discovery of promptCapabilities.resourceBlob
-      // This is a conservative capability gate; actual processing verified at runtime.
-      return true;
+      // Conservative false until capability discovery via ACP promptCapabilities.image
+      // At runtime, the AntigravityClient checks promptCapabilities and fails with
+      // PROMPT_FAILED if the provider reports no image support.
+      return false;
     case "none":
     default:
       return false;

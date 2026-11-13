@@ -68,46 +68,63 @@ async function discoverModels(): Promise<{
         if (!line.trim()) continue;
         try {
           const msg = JSON.parse(line);
-          if (msg.method === "initialize" && msg.result) {
-            initialized = true;
-          } else if (
-            msg.method === "session/new" &&
-            msg.result?.configOptions
-          ) {
-            const options = msg.result.configOptions as ConfigOption[];
-            for (const opt of options) {
-              if (opt.key === "model" && opt.type === "select" && opt.values) {
-                for (const value of opt.values) {
-                  models.push({
-                    id: value.value,
-                    name: value.label || value.value,
-                  });
-                }
-              } else if (
-                opt.key === "thinkingLevel" &&
-                opt.type === "select" &&
-                opt.values
-              ) {
-                for (const value of opt.values) {
-                  thinkingLevels.push(value.value);
+          // Check for initialize response (id: 1) - handle both result and error
+          if (msg.id === 1) {
+            if (msg.result) {
+              initialized = true;
+            } else if (msg.error) {
+              // Initialize failed
+              resolve({
+                models: [],
+                thinkingLevels: [],
+                error: msg.error.message || "initialize_failed",
+              });
+            }
+          } else if (msg.id === 2) {
+            // session/new response
+            if (msg.error) {
+              cleanup();
+              resolve({
+                models: [],
+                thinkingLevels: [],
+                error: msg.error.message || "session_failed",
+              });
+            } else if (msg.result?.configOptions) {
+              const options = msg.result.configOptions as ConfigOption[];
+              for (const opt of options) {
+                if (opt.key === "model" && opt.type === "select" && opt.values) {
+                  for (const value of opt.values) {
+                    models.push({
+                      id: value.value,
+                      name: value.label || value.value,
+                    });
+                  }
+                } else if (
+                  opt.key === "thinkingLevel" &&
+                  opt.type === "select" &&
+                  opt.values
+                ) {
+                  for (const value of opt.values) {
+                    thinkingLevels.push(value.value);
+                  }
                 }
               }
+
+              // Close session and exit
+              proc.stdin?.write(
+                JSON.stringify({
+                  jsonrpc: "2.0",
+                  id: 999,
+                  method: "session/close",
+                  params: { sessionId: msg.result.sessionId },
+                }) + "\n"
+              );
+
+              setTimeout(() => {
+                cleanup();
+                resolve({ models, thinkingLevels, error: null });
+              }, 100);
             }
-
-            // Close session and exit
-            proc.stdin?.write(
-              JSON.stringify({
-                jsonrpc: "2.0",
-                id: 999,
-                method: "session/close",
-                params: { sessionId: msg.result.sessionId },
-              }) + "\n"
-            );
-
-            setTimeout(() => {
-              cleanup();
-              resolve({ models, thinkingLevels, error: null });
-            }, 100);
           }
         } catch {
           // Ignore parse errors
@@ -125,7 +142,7 @@ async function discoverModels(): Promise<{
       });
     });
 
-    proc.on("exit", () => {
+    proc.on("exit", (code, signal) => {
       if (!initialized) {
         resolve({
           models: [],
@@ -133,6 +150,8 @@ async function discoverModels(): Promise<{
           error: "cli_unavailable",
         });
       }
+      // If session/new failed, we still get exit but models/thinkingLevels are empty
+      // This is fine - empty arrays with null error indicate success but no models found
     });
 
     // Initialize

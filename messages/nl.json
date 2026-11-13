@@ -238,6 +238,44 @@
       },
       "budget": {
         "exceeded": "Het AI-budget voor vandaag is op, dus er is niets verzonden. Morgen is het er weer."
+      },
+      "antigravity": {
+        "title": "Antigravity CLI",
+        "description": "Configureer Antigravity CLI (agy) als AI-provider. De CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-diensten.",
+        "connect": "Antigravity verbinden",
+        "follow_instructions": "Volg deze stappen om verbinding te maken:",
+        "instructions": [
+          "Om de Antigravity-instelling af te ronden, moet u zich authenticeren bij uw Antigravity-account:",
+          "",
+          "1. Voer het volgende commando uit in uw terminal:",
+          "   agy acp --login",
+          "",
+          "2. Er opent een browservenster voor aanmelding",
+          "3. Voltooi het authenticatieproces",
+          "4. Keer terug naar HealthLog en test de verbinding"
+        ],
+        "disconnect": "Verbinding verbreken",
+        "cli": "CLI",
+        "cli_status": {
+          "installed": "CLI-installatie",
+          "not_found": "Niet gevonden",
+          "version": "Versie {version}"
+        },
+        "connection_status": {
+          "disconnected": "Verbinding verbroken",
+          "connected": "Verbonden",
+          "auth_required": "Authenticatie vereist",
+          "error": "Fout",
+          "connected_at": "Verbonden: {date}"
+        },
+        "capabilities": {
+          "title": "Mogelijkheden",
+          "image": "Afbeeldingen",
+          "pdf_native": "PDF (Natuurlijk)",
+          "tools": "Hulpmiddelen",
+          "audio": "Audio"
+        },
+        "external_processing_warning": "De Antigravity CLI draait lokaal maar stuurt gegevens naar Antigravity/Google-diensten voor verwerking. Zie de servicevoorwaarden van Antigravity voor details over gegevensverwerking."
       }
     },
     "passkey": {
