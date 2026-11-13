@@ -13,17 +13,17 @@
 
 ### Test Summary
 
-| Test | Result | Notes |
-|------|--------|-------|
-| Initialize | ✅ PASSED | Protocol v1 works |
-| Session/new | ✅ PASSED | ConfigOptions: Model, Thinking Level, Mode |
-| Simple completion | ❌ FAILED | Quota exceeded |
-| Streaming | ✅ PASSED | agent_message_chunk works |
-| Multi-turn | ❌ FAILED | Quota exceeded |
-| Image processing | ⚠️ WRONG FORMAT | "image: data is required" - needs correction |
-| PDF processing | ⚠️ QUOTA | resource.blob accepted, quota blocked response |
-| Cancellation | ✅ PASSED | Prompt completed too fast to cancel |
-| Profile isolation | ✅ PASSED | Two concurrent processes, different sessions |
+| Test              | Result          | Notes                                          |
+| ----------------- | --------------- | ---------------------------------------------- |
+| Initialize        | ✅ PASSED       | Protocol v1 works                              |
+| Session/new       | ✅ PASSED       | ConfigOptions: Model, Thinking Level, Mode     |
+| Simple completion | ❌ FAILED       | Quota exceeded                                 |
+| Streaming         | ✅ PASSED       | agent_message_chunk works                      |
+| Multi-turn        | ❌ FAILED       | Quota exceeded                                 |
+| Image processing  | ⚠️ WRONG FORMAT | "image: data is required" - needs correction   |
+| PDF processing    | ⚠️ QUOTA        | resource.blob accepted, quota blocked response |
+| Cancellation      | ✅ PASSED       | Prompt completed too fast to cancel            |
+| Profile isolation | ✅ PASSED       | Two concurrent processes, different sessions   |
 
 ---
 
@@ -43,11 +43,11 @@ Not returned in initialize. Auth is handled externally via `agy acp --login`.
 
 From `session/new` configOptions:
 
-| Category | Options |
-|----------|---------|
-| Model | Select type, values not enumerated in PoC |
-| Thinking Level | Select type, values not enumerated |
-| Mode | Select type, values not enumerated |
+| Category       | Options                                   |
+| -------------- | ----------------------------------------- |
+| Model          | Select type, values not enumerated in PoC |
+| Thinking Level | Select type, values not enumerated        |
+| Mode           | Select type, values not enumerated        |
 
 **Action for Stage 2**: Query actual values from configOptions by setting the option or parsing session/update notifications.
 
@@ -80,11 +80,13 @@ From `session/new` configOptions:
 **Test**: Two concurrent ACP processes without --app-data-dir
 
 **Result**: ✅ SUCCESS
+
 - Both processes started successfully
 - Different session IDs: `3ecb8128...` vs `d59b99a3...`
 - No conflicts observed
 
 **Questions answered**:
+
 - [x] Can two profiles run simultaneously? ✅ YES
 - [x] Do sessions stay isolated? ✅ YES
 - [ ] Does `--app-data-dir` fully isolate state? ⚠️ Not tested (used default)
@@ -100,6 +102,7 @@ From `session/new` configOptions:
 **Primary**: ✅ ACP v1 (stdio JSON-RPC)
 
 **Rationale**:
+
 - Protocol works reliably
 - Streaming via `agent_message_chunk` confirmed
 - Session management works
@@ -108,11 +111,11 @@ From `session/new` configOptions:
 
 ### Excluded Alternatives
 
-| Transport | Reason |
-|-----------|--------|
+| Transport                             | Reason                                    |
+| ------------------------------------- | ----------------------------------------- |
 | Headless `--input-format stream-json` | Only text blocks supported, no images/PDF |
-| HTTP API | Not available for local CLI |
-| MCP | Different use case |
+| HTTP API                              | Not available for local CLI               |
+| MCP                                   | Different use case                        |
 
 ---
 
@@ -131,6 +134,7 @@ From `session/new` configOptions:
 **Pattern**: New session per completion
 
 **Rationale**:
+
 - Simpler state management
 - No cross-request session ID persistence
 - Always clean slate
@@ -145,11 +149,11 @@ From `session/new` configOptions:
 
 **Normalization**: Map ACP errors to stable codes
 
-| ACP Error | HealthLog Code |
-|-----------|----------------|
-| "Individual quota reached" | `quota_exceeded` |
-| "Authentication required" | `auth_required` |
-| JSON-RPC error codes | Map to `FailureKind` |
+| ACP Error                  | HealthLog Code       |
+| -------------------------- | -------------------- |
+| "Individual quota reached" | `quota_exceeded`     |
+| "Authentication required"  | `auth_required`      |
+| JSON-RPC error codes       | Map to `FailureKind` |
 
 ---
 
@@ -187,17 +191,15 @@ From `session/new` configOptions:
 
 **Problem**: Earlier test showed "must not be absolute" error
 
-**Next step**: Test with relative paths or verify CLI source code
+**Resolved (checked 2026-11-13 with agy 1.5.8)**: `--app-data-dir` must be a relative name. The CLI puts the state at `<--gemini-dir>/<--app-data-dir>`. `--gemini-dir` defaults to `$HOME/.gemini`, which every user would share. The client now passes `--gemini-dir <profile root>` and `--app-data-dir <profile id>`.
 
-**Impact**: Multi-user deployment blocked until resolved
+**Still open**: which file holds the OAuth token. The login needs a browser and a pasted code, so it was not run. Check the profile folder after the first real login.
 
 ### 3. Capability Discovery Timing
 
 **Problem**: `capabilities` undefined in initialize
 
-**Next step**: Check session/update notifications after session/new
-
-**Impact**: Minor, can work around with configOptions
+**Resolved (checked 2026-11-13 with agy 1.5.8)**: the prompt capabilities sit under `agentCapabilities.promptCapabilities` in the initialize result. They report `image`, `audio` and `embeddedContext`. There is no `resourceBlob` key. The client reads `image` and `embeddedContext`. The earlier `capabilities` path was wrong, so the client never saw image support.
 
 ---
 
@@ -243,6 +245,7 @@ Failed: 2/9 (quota exceeded)
 ```
 
 **Commit message**:
+
 ```
 test(ai): add Antigravity CLI transport PoC
 
@@ -252,4 +255,3 @@ test(ai): add Antigravity CLI transport PoC
 - Multimodal: PDF format accepted, image format needs correction
 - Quota exhausted during test, full verification pending
 ```
-

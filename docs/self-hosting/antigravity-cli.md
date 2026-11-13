@@ -7,6 +7,7 @@ This guide covers deployment and configuration of the Antigravity CLI (`agy`) pr
 Antigravity CLI is an optional AI provider that runs locally in the HealthLog container but sends data to Antigravity/Google services for processing.
 
 **Key characteristics**:
+
 - ✅ Runs locally in Docker container
 - ✅ Support for images and PDFs
 - ❌ No HealthLog function calling (`supportsTools = false`)
@@ -26,6 +27,7 @@ Antigravity CLI is an optional AI provider that runs locally in the HealthLog co
 The HealthLog Docker image includes `agy` binary. No additional installation needed.
 
 Verify installation:
+
 ```bash
 docker compose exec app agy --version
 ```
@@ -55,7 +57,7 @@ services:
   app:
     volumes:
       - backups:/var/lib/healthlog/backups
-      - antigravity-profiles:/var/lib/healthlog/antigravity  # Uncomment this
+      - antigravity-profiles:/var/lib/healthlog/antigravity # Uncomment this
     environment:
       ANTIGRAVITY_PROFILE_ROOT: /var/lib/healthlog/antigravity
 
@@ -63,7 +65,7 @@ volumes:
   postgres-data:
   pgdata:
   backups:
-  antigravity-profiles:  # Uncomment this
+  antigravity-profiles: # Uncomment this
 ```
 
 Each user gets an isolated subdirectory under `/var/lib/healthlog/antigravity/<profile-id>`.
@@ -94,37 +96,40 @@ Each user must authenticate independently:
 1. User opens HealthLog Settings → AI Providers → Antigravity
 2. Click "Connect Antigravity"
 3. HealthLog generates a profile ID and shows instructions
-4. User runs the command in their terminal:
+4. The operator (or user, on the HealthLog host) runs the login in a terminal inside the container:
    ```bash
-   docker compose exec app agy acp --login --app-data-dir /var/lib/healthlog/antigravity/<profile-id>
+   docker compose exec -it app agy acp --login --gemini-dir /var/lib/healthlog/antigravity --app-data-dir <profile-id>
    ```
-5. Browser opens for Antigravity authentication
-6. User completes OAuth flow
-7. User tests connection in HealthLog
+5. The CLI prints a sign-in link. The user opens it, signs in to Antigravity, and pastes the code back into the terminal
+6. The user runs "Test connection" in HealthLog. The test starts the CLI on the profile and sends no prompt
 
-**Note**: For single-user deploys without `ANTIGRAVITY_PROFILE_ROOT`, the command simplifies to:
-```bash
-docker compose exec app agy acp --login
-```
+The login must run on the host where HealthLog runs. The profile folder lives there, so a login on a laptop does not help the server.
+
+Without `ANTIGRAVITY_PROFILE_ROOT` the provider stays off, because there is no per-user folder to isolate the login in.
+
+8. Add "Antigravity CLI" to the fallback chain in Settings, AI. It is not on by default.
 
 ## Security Model
 
 ### Credential Storage
 
-- **HealthLog Database**: Stores only profile ID, model selection, connection status
+- **HealthLog Database**: Stores only the profile ID, the connection status and the last test result
 - **CLI Credential Store**: Stores OAuth tokens independently (managed by `agy`)
 - **Separation**: HealthLog never sees or stores OAuth tokens
 
 ### Profile Isolation
 
 When `ANTIGRAVITY_PROFILE_ROOT` is configured:
-- Each user gets an isolated profile directory
-- Profiles cannot access each other's data
-- Process isolation: separate `agy` process per user
+
+- Each user gets a profile folder, `<root>/<profile-id>`. HealthLog passes the root as `--gemini-dir` and the profile ID as `--app-data-dir`. Without `--gemini-dir` the CLI would use `$HOME/.gemini`, which all users would share.
+- The CLI also keeps a shared `<root>/config` folder. In a test run with agy 1.5.8 it held `config.json` and `mcp_config.json`. Review what it holds before relying on it.
+- Separate `agy` process per call
+- Not yet verified: which file the CLI writes the OAuth token to. Check the profile folder after the first real login.
 
 ### Workspace Isolation
 
 Every completion runs in:
+
 - Empty temporary workspace (not the HealthLog codebase)
 - Deleted after completion
 - `--sandbox` flag enabled
@@ -140,6 +145,7 @@ User Request → HealthLog → agy CLI → Antigravity/Google Services
 ```
 
 HealthLog never sees:
+
 - OAuth tokens
 - API keys
 - Prompt/response content (except for debugging)
@@ -166,12 +172,14 @@ HealthLog never sees:
 ### Connection Status
 
 Check status via HealthLog API:
+
 ```bash
 curl -H "Authorization: Bearer <token>" \
   http://localhost:3000/api/antigravity/status
 ```
 
 Returns:
+
 ```json
 {
   "cliInstalled": true,
@@ -189,12 +197,14 @@ Returns:
 ### Logs
 
 **Do NOT log**:
+
 - Full stderr output (may contain sensitive data)
 - Prompt content
 - Response content
 - Attachment data
 
 HealthLog logs only:
+
 - Capability negotiation results
 - Connection status changes
 - Error codes (not messages)
@@ -220,6 +230,7 @@ HealthLog logs only:
 **Cause**: `ANTIGRAVITY_PROFILE_ROOT` not configured
 
 **Solution**:
+
 1. Set `ANTIGRAVITY_PROFILE_ROOT` environment variable
 2. Create volume mount as shown above
 3. Restart container
@@ -229,6 +240,7 @@ HealthLog logs only:
 **Symptom**: "Permission denied" on profile directory
 
 **Solution**: Ensure directory ownership:
+
 ```bash
 docker compose exec app chown -R nextjs:nodejs /var/lib/healthlog/antigravity
 docker compose exec app chmod 755 /var/lib/healthlog/antigravity
@@ -239,6 +251,7 @@ docker compose exec app chmod 755 /var/lib/healthlog/antigravity
 ### Process Limits
 
 Each `agy` process:
+
 - **Timeout**: Default 60 seconds (configurable per request)
 - **Memory**: Shares container memory limit
 - **Concurrency**: One process per active completion
@@ -257,11 +270,13 @@ Each `agy` process:
 - [Antigravity CLI Documentation](https://antigravity.google/docs/cli/)
 
 **HealthLog does NOT**:
+
 - Control data retention by Antigravity
 - Verify data handling practices
 - Assume liability for external processing
 
 **User responsibility**:
+
 - Verify compliance with local regulations
 - Review Antigravity terms before enabling
 - Inform end users about external data processing

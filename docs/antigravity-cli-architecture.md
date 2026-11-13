@@ -434,6 +434,8 @@ src/lib/ai/antigravity-capabilities.ts
 src/lib/ai/antigravity-errors.ts
 src/app/api/antigravity/status/route.ts
 src/app/api/antigravity/models/route.ts
+src/app/api/antigravity/model/route.ts
+src/app/api/antigravity/test/route.ts
 src/app/api/antigravity/authenticate/route.ts
 src/app/api/antigravity/disconnect/route.ts
 src/components/settings/ai/antigravity-provider-form.tsx

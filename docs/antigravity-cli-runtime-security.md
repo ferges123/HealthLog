@@ -18,6 +18,7 @@ This document describes the runtime security model for the Antigravity CLI provi
 **File**: `Dockerfile`
 
 **Stage 5 — Antigravity CLI**:
+
 ```dockerfile
 FROM node:22-trixie-slim@sha256:... AS agy-cli
 
@@ -40,6 +41,7 @@ RUN set -eux; \
 ```
 
 **Security properties**:
+
 - ✅ Pinned version (no auto-updates)
 - ✅ SHA256 verification
 - ✅ Multi-architecture support (amd64, arm64)
@@ -47,6 +49,7 @@ RUN set -eux; \
 - ✅ Minimal stage (no package managers)
 
 **Runner stage**:
+
 ```dockerfile
 # Copy Antigravity CLI binary
 COPY --from=agy-cli /usr/local/bin/agy /usr/local/bin/agy
@@ -58,6 +61,7 @@ RUN chmod 755 /usr/local/bin/agy && agy --version
 **File**: `docker-compose.yml`
 
 **Profile directory**:
+
 ```yaml
 services:
   app:
@@ -71,6 +75,7 @@ volumes:
 ```
 
 **Security properties**:
+
 - ✅ Isolated volume (never entire `/home`)
 - ✅ User-owned directory (`nextjs:nodejs`, mode 755)
 - ✅ Optional (single-user deploys can skip)
@@ -88,23 +93,29 @@ volumes:
 Each completion spawns an isolated process:
 
 ```typescript
-const args = ["acp", "--sandbox", "--disable-telemetry"];
-if (this.options.profileDir) {
-  args.push("--app-data-dir", this.options.profileDir);
-}
+const args = [
+  "acp",
+  "--sandbox",
+  "--disable-telemetry",
+  "--gemini-dir",
+  profile.geminiDir, // ANTIGRAVITY_PROFILE_ROOT (absolute)
+  "--app-data-dir",
+  profile.appDataDir, // profile id (relative name)
+];
 
 const connection = await AcpConnection.start(args, {
-  cwd: workDir,  // Empty temporary directory
-  env: childEnv(),  // Allowlisted environment only
+  cwd: workDir, // Empty temporary directory
+  env: antigravityChildEnv(), // Allowlisted environment only
 });
 ```
 
 **Isolation properties**:
+
 1. **Workspace**: Fresh `mkdtempSync()` directory per request
 2. **Environment**: Only allowlisted vars (`PATH`, `HOME`, `LANG`, etc.)
 3. **Sandbox**: `--sandbox` flag enabled
 4. **Telemetry**: `--disable-telemetry` (doesn't disable Interactions)
-5. **Profile**: Isolated `--app-data-dir` per user (when configured)
+5. **Profile**: `--gemini-dir` set to the operator's root and `--app-data-dir` set to the user's profile id. Not yet verified end to end with a real login.
 
 ### Environment Allowlist
 
@@ -125,6 +136,7 @@ const CHILD_ENV_ALLOWLIST = [
 ```
 
 **Excluded**:
+
 - ❌ `ANTHROPIC_API_KEY`
 - ❌ `OPENAI_API_KEY`
 - ❌ `DATABASE_URL`
@@ -155,6 +167,7 @@ private onAgentRequest(
 ```
 
 **No exceptions**:
+
 - ❌ No "read-only" file access
 - ❌ No terminal commands
 - ❌ No network operations
@@ -171,12 +184,13 @@ try {
 } finally {
   state.done = true;
   if (onAbort) signal?.removeEventListener("abort", onAbort);
-  await state.connection?.close();  // SIGTERM, then SIGKILL
-  rmSync(workDir, { recursive: true, force: true });  // Cleanup workspace
+  await state.connection?.close(); // SIGTERM, then SIGKILL
+  rmSync(workDir, { recursive: true, force: true }); // Cleanup workspace
 }
 ```
 
 **Cleanup guarantees**:
+
 1. Session closed
 2. Process terminated (SIGTERM → SIGKILL after 2s grace)
 3. Workspace deleted
@@ -189,12 +203,14 @@ try {
 ### What HealthLog Sends
 
 **Via ACP**:
+
 - System instructions
 - User messages
 - Images (Base64)
 - PDFs (Base64 blob, never file paths)
 
 **Never sends**:
+
 - ❌ File paths (`@file` syntax NOT used)
 - ❌ Local files
 - ❌ Database content
@@ -203,6 +219,7 @@ try {
 ### What HealthLog Logs
 
 **Never logged**:
+
 - ❌ Full stderr output (may contain sensitive data)
 - ❌ Prompt content
 - ❌ Response content
@@ -210,6 +227,7 @@ try {
 - ❌ ACP session IDs
 
 **Logged**:
+
 - ✅ Capability negotiation results
 - ✅ Connection status changes
 - ✅ Error codes (stable codes, not messages)
@@ -228,6 +246,7 @@ User → HealthLog → ACP (JSON-RPC) → agy CLI → Antigravity/Google
 ```
 
 **No persistence**:
+
 - Temp workspace: Deleted after completion
 - Session IDs: Never stored in DB
 - Credentials: Managed by CLI, not HealthLog
@@ -251,6 +270,7 @@ const KILL_GRACE_MS = 2_000;
 ### Memory Limits
 
 **Buffer limit**: 16 MB per JSON-RPC message
+
 ```typescript
 const MAX_BUFFER_CHARS = 16 * 1024 * 1024;
 ```
@@ -260,6 +280,7 @@ Prevents runaway agent from exhausting memory.
 ### Concurrency
 
 **Pattern**: One process per completion, no session reuse
+
 ```typescript
 // New process and session for each completion
 const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
@@ -272,12 +293,14 @@ const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
 ## Security Checklist
 
 ### ✅ Workspace Security
+
 - [x] Empty temporary workspace per request
 - [x] Workspace deleted in `finally` block
 - [x] Never HealthLog codebase directory
 - [x] No file persistence between requests
 
 ### ✅ Process Security
+
 - [x] `spawn` with `shell: false`
 - [x] Allowlisted environment only
 - [x] `--sandbox` flag enabled
@@ -286,18 +309,21 @@ const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
 - [x] No terminal client capabilities
 
 ### ✅ Permission Security
+
 - [x] All `session/request_permission` rejected
 - [x] No "read-only" exceptions
 - [x] No tool execution
 - [x] No command execution
 
 ### ✅ Profile Isolation
+
 - [x] Optional `ANTIGRAVITY_PROFILE_ROOT`
 - [x] Separate `--app-data-dir` per user
 - [x] No shared credentials between users
 - [x] Profile ID is opaque identifier (not a path)
 
 ### ✅ Data Security
+
 - [x] No OAuth tokens in database
 - [x] No logging of stderr
 - [x] No logging of prompts/responses
@@ -305,12 +331,14 @@ const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
 - [x] No persistent sessions
 
 ### ✅ Resource Security
+
 - [x] Process timeout enforced
 - [x] Message size limits
 - [x] Proper cleanup on abort/error
 - [x] No zombie processes
 
 ### ✅ Docker Security
+
 - [x] No privileged mode
 - [x] No Docker socket access
 - [x] `cap_drop: ALL`
@@ -324,6 +352,7 @@ const workDir = mkdtempSync(join(tmpdir(), "healthlog-acp-"));
 ### Threat Model
 
 Malicious document attempts to:
+
 1. Read `.env` file
 2. Access database
 3. Access other profiles
@@ -333,21 +362,25 @@ Malicious document attempts to:
 ### Mitigations
 
 **Workspace isolation**:
+
 - Empty temp directory: nothing to read
 - No access to HealthLog codebase
 - No database connection
 
 **Permission rejection**:
+
 - No file read permission
 - No command execution
 - No network access
 
 **Environment isolation**:
+
 - No credentials in environment
 - No database URL
 - No encryption keys
 
 **Process isolation**:
+
 - Separate process per request
 - No shared state
 - No session resume
@@ -358,15 +391,15 @@ Malicious document attempts to:
 
 ## Comparison with Other Providers
 
-| Property | Anthropic/OpenAI | Codex | Antigravity |
-|----------|------------------|-------|-------------|
-| Process isolation | N/A (API) | N/A (API) | ✅ Per completion |
-| Workspace isolation | N/A | N/A | ✅ Temp directory |
-| Permission model | N/A | N/A | ✅ Reject all |
-| Credential storage | Encrypted in DB | Encrypted in DB | CLI-managed |
-| Function calling | ✅ Yes | ✅ Yes | ❌ No |
-| Image support | ✅ Yes | ✅ Yes | ✅ Yes |
-| PDF support | ✅ Native | ❌ Raster only | ✅ Native |
+| Property            | Anthropic/OpenAI | Codex           | Antigravity       |
+| ------------------- | ---------------- | --------------- | ----------------- |
+| Process isolation   | N/A (API)        | N/A (API)       | ✅ Per completion |
+| Workspace isolation | N/A              | N/A             | ✅ Temp directory |
+| Permission model    | N/A              | N/A             | ✅ Reject all     |
+| Credential storage  | Encrypted in DB  | Encrypted in DB | CLI-managed       |
+| Function calling    | ✅ Yes           | ✅ Yes          | ❌ No             |
+| Image support       | ✅ Yes           | ✅ Yes          | ✅ Yes            |
+| PDF support         | ✅ Native        | ❌ Raster only  | ✅ Native         |
 
 ---
 
