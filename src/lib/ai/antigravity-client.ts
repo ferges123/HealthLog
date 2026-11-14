@@ -235,7 +235,7 @@ type AcpPromptBlock =
  * recreate and the user must re-login.
  */
 export function antigravityChildEnv(
-  profileDir: string,
+  profileDir?: string,
 ): NodeJS.ProcessEnv {
   const env = {} as NodeJS.ProcessEnv;
   for (const key of CHILD_ENV_ALLOWLIST) {
@@ -246,11 +246,15 @@ export function antigravityChildEnv(
   // under the per-user profile directory, which is volume-mounted and persists
   // across container recreates. The XDG variables follow the same override so
   // nothing leaks into the container's default home directory.
-  env.HOME = profileDir;
-  env.XDG_DATA_HOME = join(profileDir, ".local", "share");
-  env.XDG_CONFIG_HOME = join(profileDir, ".config");
-  env.XDG_CACHE_HOME = join(profileDir, ".cache");
-  env.XDG_STATE_HOME = join(profileDir, ".local", "state");
+  // When profileDir is not provided (e.g. for the CLI version probe in the
+  // status route) the app's own HOME is used as-is.
+  if (profileDir) {
+    env.HOME = profileDir;
+    env.XDG_DATA_HOME = join(profileDir, ".local", "share");
+    env.XDG_CONFIG_HOME = join(profileDir, ".config");
+    env.XDG_CACHE_HOME = join(profileDir, ".cache");
+    env.XDG_STATE_HOME = join(profileDir, ".local", "state");
+  }
   return env;
 }
 
