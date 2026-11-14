@@ -59,7 +59,15 @@ export class AcpConnection {
   private buffer = "";
   private nextId = 1;
   private readonly pending = new Map<number | string, PendingCall>();
-  private failure: AntigravityError | null = null;
+
+  /**
+   * Set as soon as we know no new outgoing calls should be accepted: a stdin
+   * write error, an explicit close(), or a fatal process error. Setting this
+   * does NOT immediately reject in-flight pending calls — stdout may still
+   * deliver their responses via the 'data' → onLine() path.
+   */
+  private closedError: AntigravityError | null = null;
+
   private readonly exited: Promise<void>;
 
   /** Receives each `session/update` notification from the agent. */
@@ -69,19 +77,29 @@ export class AcpConnection {
     this.exited = new Promise<void>((resolve) => {
       child.on("exit", () => resolve());
     });
+
     child.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
     // stderr can carry user data or secrets. Drain it and never log it.
     child.stderr?.resume();
-    child.stdin?.on("error", () =>
-      this.fail(
-        new AntigravityError(
-          "agy stdin closed",
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-        ),
-      ),
-    );
+
+    // A stdin write error (EPIPE) means agy has already closed its write end
+    // of the pipe — typically because it finished and exited naturally. The
+    // response for any in-flight session/prompt is already in the stdout pipe
+    // buffer and will arrive via 'data' events. Record the error so call()
+    // rejects new requests, but do NOT reject pending calls here: stdout
+    // 'close' will do that after all buffered data has been delivered.
+    child.stdin?.on("error", () => {
+      this.closedError ??= new AntigravityError(
+        "agy stdin closed",
+        ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+      );
+    });
+
+    // A spawn-level or OS-level error means the process never ran or its I/O
+    // is broken beyond recovery. Stdout will not produce valid data, so reject
+    // pending calls immediately.
     child.on("error", (err) =>
-      this.fail(
+      this.failAll(
         new AntigravityError(
           "agy process error",
           ANTIGRAVITY_ERRORS.PROCESS_ERROR,
@@ -89,16 +107,18 @@ export class AcpConnection {
         ),
       ),
     );
-    // ⚠ Use stdout 'close' (not child 'exit') so the fail() runs only after
-    // the last stdout data has been flushed through onData. The 'exit' event
-    // can fire before the final stdout bytes are delivered, which would reject
-    // the pending session/prompt call before its response is read.
+
+    // stdout 'close' fires only after every last byte has been delivered to
+    // 'data' handlers and processed by onLine(). Any pending call that
+    // survives to this point will never receive a response from a natural exit
+    // — reject them now.
     child.stdout?.on("close", () =>
-      this.fail(
-        new AntigravityError(
-          `agy stdout closed`,
-          ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-        ),
+      this.failAll(
+        this.closedError ??
+          new AntigravityError(
+            "agy stdout closed",
+            ANTIGRAVITY_ERRORS.PROCESS_ERROR,
+          ),
       ),
     );
   }
@@ -154,7 +174,7 @@ export class AcpConnection {
     params: unknown,
     timeoutMs: number,
   ): Promise<JsonRpcResponse> {
-    if (this.failure) return Promise.reject(this.failure);
+    if (this.closedError) return Promise.reject(this.closedError);
     const id = this.nextId++;
     return new Promise<JsonRpcResponse>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -171,13 +191,17 @@ export class AcpConnection {
     });
   }
 
-  /** Stop the process: SIGTERM, then SIGKILL after a grace period. */
+  /**
+   * Stop the process: mark as closed (no new calls), send SIGTERM, wait for
+   * the process to exit, then reject any pending calls that did not receive a
+   * response. The stdout 'close' handler also rejects pending calls for the
+   * natural-exit path; whichever fires first wins (failAll is idempotent once
+   * the pending map is empty).
+   */
   async close(): Promise<void> {
-    this.fail(
-      new AntigravityError(
-        "agy connection closed",
-        ANTIGRAVITY_ERRORS.PROCESS_ERROR,
-      ),
+    this.closedError ??= new AntigravityError(
+      "agy connection closed",
+      ANTIGRAVITY_ERRORS.PROCESS_ERROR,
     );
     const child = this.child;
     if (
@@ -192,15 +216,24 @@ export class AcpConnection {
     child.kill("SIGTERM");
     await this.exited;
     clearTimeout(killTimer);
+    // Reject any pending calls that survived the kill. In a cancellation
+    // scenario these will never receive a response; in the normal success path
+    // the pending map is already empty by the time close() is called.
+    this.failAll(this.closedError);
   }
 
   private write(message: object): void {
     this.child.stdin?.write(JSON.stringify(message) + "\n");
   }
 
-  private fail(error: AntigravityError): void {
-    if (this.failure) return;
-    this.failure = error;
+  /**
+   * Reject every pending call. Only called from the stdout 'close' handler
+   * (after all data is read), from fatal process errors, and from close()
+   * after the process exits. failAll is idempotent: once pending is empty it
+   * is a no-op.
+   */
+  private failAll(error: AntigravityError): void {
+    this.closedError ??= error;
     for (const [id, call] of this.pending) {
       this.pending.delete(id);
       clearTimeout(call.timer);
@@ -213,7 +246,7 @@ export class AcpConnection {
     // intact (Polish letters are two bytes in UTF-8).
     this.buffer += this.decoder.write(chunk);
     if (this.buffer.length > MAX_BUFFER_CHARS) {
-      this.fail(
+      this.failAll(
         new AntigravityError(
           "agy sent an oversized message",
           ANTIGRAVITY_ERRORS.PROCESS_ERROR,
