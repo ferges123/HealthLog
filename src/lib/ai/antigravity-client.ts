@@ -584,13 +584,17 @@ export class AntigravityClient implements AIProvider {
 
     const stopReason = (response.result as AcpPromptResult | undefined)
       ?.stopReason;
-    if (stopReason === "cancelled") {
+    const content = chunks.join("");
+    // A "cancelled" stop reason can appear when the CLI's sandbox rejects an
+    // internal step (e.g. a Step_Generic from the agy backend), even though
+    // the AI already emitted a complete text reply. Only treat it as an error
+    // when no content arrived at all.
+    if (stopReason === "cancelled" && !content) {
       throw new AntigravityError(
         "Antigravity cancelled the turn",
         ANTIGRAVITY_ERRORS.PROMPT_FAILED,
       );
     }
-    const content = chunks.join("");
     if (!content) {
       throw new AntigravityError(
         "Antigravity returned an empty reply",
