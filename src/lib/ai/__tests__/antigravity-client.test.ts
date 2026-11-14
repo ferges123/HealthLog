@@ -5,30 +5,23 @@ import {
   modelOptionsOf,
 } from "../antigravity-client";
 import { singleUserTurn } from "../types";
-
 // Mock the child_process spawn
 vi.mock("child_process", () => ({
   spawn: vi.fn(),
 }));
-
 // Mock fs-temp operations
 vi.mock("fs", () => ({
   mkdtempSync: vi.fn(() => "/tmp/healthlog-acp-test"),
   rmSync: vi.fn(),
   existsSync: vi.fn(() => true),
 }));
-
 vi.mock("os", () => ({
   tmpdir: () => "/tmp",
 }));
-
 import { spawn } from "child_process";
-
 const TEST_PROFILE = {
-  geminiDir: "/var/lib/healthlog/antigravity",
-  appDataDir: "user-1",
+  geminiDir: "/var/lib/healthlog/antigravity/user-1",
 };
-
 /** The model selector, in the shape ACP session configOptions define. */
 const MODEL_OPTION = {
   id: "model",
@@ -41,9 +34,7 @@ const MODEL_OPTION = {
     { value: "model-pro", name: "Pro" },
   ],
 };
-
 const DEFAULT_CONFIG_OPTIONS: unknown[] = [MODEL_OPTION];
-
 function createMockProcess({
   spawnEvent = true,
   configOptions = DEFAULT_CONFIG_OPTIONS,
@@ -61,9 +52,7 @@ function createMockProcess({
     exit: ((code: number | null, signal: string | null) => void)[];
     spawn: (() => void)[];
   } = { stdout: [], stderr: [], close: [], error: [], exit: [], spawn: [] };
-
   let stdinBuffer = "";
-
   const proc = {
     stdin: {
       on: vi.fn(),
@@ -72,7 +61,6 @@ function createMockProcess({
         // Process complete lines
         const lines = stdinBuffer.split("\n");
         stdinBuffer = lines.pop() || "";
-
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
@@ -114,12 +102,10 @@ function createMockProcess({
       setTimeout(() => handlers.exit.forEach((h) => h(0, null)), 10);
     }),
   };
-
   function sendMessage(msg: unknown) {
     const data = Buffer.from(JSON.stringify(msg) + "\n");
     handlers.stdout.forEach((h) => h(data));
   }
-
   function handleMockMessage(msg: {
     jsonrpc: string;
     id?: number;
@@ -186,46 +172,38 @@ function createMockProcess({
       sendMessage({ jsonrpc: "2.0", id: msg.id, result: {} });
     }
   }
-
   return { proc, sendMessage, handlers };
 }
-
 describe("AntigravityClient", () => {
   let mockSpawn: ReturnType<typeof vi.fn>;
   let mockProcess: ReturnType<typeof createMockProcess>;
-
   beforeEach(() => {
     vi.clearAllMocks();
     mockProcess = createMockProcess();
     mockSpawn = spawn as ReturnType<typeof vi.fn>;
     mockSpawn.mockReturnValue(mockProcess.proc);
   });
-
   afterEach(() => {
     vi.restoreAllMocks();
   });
-
   describe("type", () => {
     it('has type="antigravity"', () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       expect(client.type).toBe("antigravity");
     });
   });
-
   describe("supportsTools", () => {
     it("is false (ACP tools are NOT HealthLog function calling)", () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       expect(client.supportsTools).toBe(false);
     });
   });
-
   describe("generateCompletion", () => {
     it("returns a CompletionResult with required fields", async () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       const result = await client.generateCompletion(
         singleUserTurn({ system: "You are helpful.", user: "Hello" }),
       );
-
       expect(typeof result.content).toBe("string");
       expect(result.content.length).toBeGreaterThan(0);
       expect(result.providerType).toBe("antigravity");
@@ -234,17 +212,14 @@ describe("AntigravityClient", () => {
         result.tokensUsed === null || typeof result.tokensUsed === "number",
       ).toBe(true);
     });
-
     it("includes system prompt in the request", async () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       await client.generateCompletion(
         singleUserTurn({ system: "Custom system", user: "Hello" }),
       );
-
       // Check that prompt was sent
       expect(mockProcess.proc.stdin.write).toHaveBeenCalled();
     });
-
     it("handles multimodal content (image)", async () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       const result = await client.generateCompletion(
@@ -259,63 +234,50 @@ describe("AntigravityClient", () => {
           ],
         }),
       );
-
       expect(typeof result.content).toBe("string");
     });
   });
-
   describe("generateCompletionStream", () => {
     it("calls onDelta for each chunk", async () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       const chunks: string[] = [];
-
       const result = await client.generateCompletionStream(
         singleUserTurn({ system: "sys", user: "user" }),
         (delta) => chunks.push(delta),
       );
-
       expect(chunks.length).toBeGreaterThan(0);
       expect(typeof result.content).toBe("string");
     });
   });
-
   describe("error handling", () => {
     it("throws CLI_UNAVAILABLE when spawn error event fires", async () => {
       const { proc, handlers } = createMockProcess({ spawnEvent: false });
       mockSpawn.mockReturnValue(proc);
-
       const client = new AntigravityClient({ profile: TEST_PROFILE });
-
       const promise = client.generateCompletion(
         singleUserTurn({ system: "s", user: "u" }),
       );
-
       // Emit error after a tick
       setTimeout(() => {
         handlers.error.forEach((h) => h(new Error("spawn ENOENT")));
       }, 10);
-
       await expect(promise).rejects.toMatchObject({
         code: ANTIGRAVITY_ERRORS.CLI_UNAVAILABLE,
       });
     });
   });
-
   describe("process lifecycle", () => {
     it("cleans up process after completion", async () => {
       const client = new AntigravityClient({ profile: TEST_PROFILE });
       await client.generateCompletion(
         singleUserTurn({ system: "s", user: "u" }),
       );
-
       // Process should be killed
       expect(mockProcess.proc.kill).toHaveBeenCalled();
     });
-
     it("cleans up process on error", async () => {
       const { proc, sendMessage } = createMockProcess();
       mockSpawn.mockReturnValue(proc);
-
       // Make session/new fail
       const originalHandle = proc.stdin.write;
       proc.stdin.write = vi.fn((data: string) => {
@@ -329,18 +291,14 @@ describe("AntigravityClient", () => {
         }
         return originalHandle.call(proc.stdin, data);
       });
-
       const client = new AntigravityClient({ profile: TEST_PROFILE });
-
       await expect(
         client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
       ).rejects.toThrow();
-
       expect(proc.kill).toHaveBeenCalled();
     });
   });
 });
-
 /** Every JSON-RPC message the client wrote to the child's stdin, in order. */
 function sentMessages(
   write: unknown,
@@ -353,7 +311,6 @@ function sentMessages(
       .map((line) => JSON.parse(line)),
   );
 }
-
 describe("modelOptionsOf", () => {
   it("reads the model selector from the ACP configOptions shape", () => {
     expect(modelOptionsOf([MODEL_OPTION])).toEqual({
@@ -365,7 +322,6 @@ describe("modelOptionsOf", () => {
       currentModel: "model-fast",
     });
   });
-
   it("flattens grouped options", () => {
     const grouped = {
       ...MODEL_OPTION,
@@ -380,12 +336,10 @@ describe("modelOptionsOf", () => {
       { id: "model-pro", name: "Pro" },
     ]);
   });
-
   it("matches by id when the category is missing", () => {
     const byId = { ...MODEL_OPTION, category: undefined };
     expect(modelOptionsOf([byId])?.configId).toBe("model");
   });
-
   it("skips entries without a string value and names models by value when unnamed", () => {
     const option = {
       ...MODEL_OPTION,
@@ -395,25 +349,20 @@ describe("modelOptionsOf", () => {
       { id: "model-x", name: "model-x" },
     ]);
   });
-
   it("returns null when the CLI offers no model selector", () => {
     expect(modelOptionsOf([{ id: "mode", type: "select" }])).toBeNull();
     expect(modelOptionsOf(undefined)).toBeNull();
   });
 });
-
 describe("AntigravityClient model selection", () => {
   let mockSpawn: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
     mockSpawn = spawn as ReturnType<typeof vi.fn>;
   });
-
   it("sets the chosen model before the prompt is sent", async () => {
     const { proc } = createMockProcess();
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({
       profile: TEST_PROFILE,
       model: "model-pro",
@@ -421,12 +370,10 @@ describe("AntigravityClient model selection", () => {
     const result = await client.generateCompletion(
       singleUserTurn({ system: "s", user: "u" }),
     );
-
     const methods = sentMessages(proc.stdin.write).map((m) => m.method);
     const setAt = methods.indexOf("session/set_config_option");
     expect(setAt).toBeGreaterThan(methods.indexOf("session/new"));
     expect(setAt).toBeLessThan(methods.indexOf("session/prompt"));
-
     const setCall = sentMessages(proc.stdin.write).find(
       (m) => m.method === "session/set_config_option",
     );
@@ -437,79 +384,62 @@ describe("AntigravityClient model selection", () => {
     });
     expect(result.model).toBe("model-pro");
   });
-
   it("keeps the CLI default and reports its model when no model is chosen", async () => {
     const { proc } = createMockProcess();
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({ profile: TEST_PROFILE });
     const result = await client.generateCompletion(
       singleUserTurn({ system: "s", user: "u" }),
     );
-
     const methods = sentMessages(proc.stdin.write).map((m) => m.method);
     expect(methods).not.toContain("session/set_config_option");
     expect(result.model).toBe("model-fast");
   });
-
   it("does not send a change when the chosen model is already the current one", async () => {
     const { proc } = createMockProcess();
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({
       profile: TEST_PROFILE,
       model: "model-fast",
     });
     await client.generateCompletion(singleUserTurn({ system: "s", user: "u" }));
-
     const methods = sentMessages(proc.stdin.write).map((m) => m.method);
     expect(methods).not.toContain("session/set_config_option");
   });
-
   it("fails before the prompt when the CLI does not offer the chosen model", async () => {
     const { proc } = createMockProcess();
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({
       profile: TEST_PROFILE,
       model: "model-retired",
     });
-
     await expect(
       client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
     ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE });
-
     const methods = sentMessages(proc.stdin.write).map((m) => m.method);
     expect(methods).not.toContain("session/prompt");
     expect(proc.kill).toHaveBeenCalled();
   });
-
   it("fails before the prompt when the CLI rejects the model change", async () => {
     const { proc } = createMockProcess({ setConfigFails: true });
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({
       profile: TEST_PROFILE,
       model: "model-pro",
     });
-
     await expect(
       client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
     ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.SESSION_FAILED });
-
     const methods = sentMessages(proc.stdin.write).map((m) => m.method);
     expect(methods).not.toContain("session/prompt");
   });
-
   it("fails when the CLI offers no model selector at all", async () => {
     const { proc } = createMockProcess({ configOptions: [] });
     mockSpawn.mockReturnValue(proc);
-
     const client = new AntigravityClient({
       profile: TEST_PROFILE,
       model: "model-pro",
     });
-
     await expect(
       client.generateCompletion(singleUserTurn({ system: "s", user: "u" })),
     ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE });

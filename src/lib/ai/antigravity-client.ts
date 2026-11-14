@@ -105,13 +105,12 @@ export function antigravityProfileDir(profileId: string): string | null {
 
 /**
  * Where the CLI keeps one user's state, as the two flags that select it.
- * `geminiDir` is the operator's absolute profile root. `appDataDir` is the
- * profile id, a relative name under that root. The CLI rejects an absolute
- * `--app-data-dir`, and it puts state at `<geminiDir>/<appDataDir>`.
+ * `geminiDir` is the per-user directory. `appDataDir` is left empty; with
+ * the per-user geminiDir the `--app-data-dir` flag is not needed and would
+ * create an unwanted nested subdirectory.
  */
 export interface AntigravityProfileLocation {
   geminiDir: string;
-  appDataDir: string;
 }
 
 /** The location for this user, or null when the profile does not exist yet. */
@@ -119,9 +118,14 @@ export function antigravityProfileLocation(
   profileId: string,
 ): AntigravityProfileLocation | null {
   if (antigravityProfileDir(profileId) === null) return null;
+  // geminiDir is the per-user directory (not the shared root). The CLI stores
+  // the OAuth token at <geminiDir>/antigravity-oauth-token, so it must point
+  // to the user's own directory to keep credentials isolated and to place the
+  // token file inside the volume-mounted path where it survives container
+  // recreates.
+  const root = process.env[PROFILE_ROOT_ENV] as string;
   return {
-    geminiDir: process.env[PROFILE_ROOT_ENV] as string,
-    appDataDir: profileId,
+    geminiDir: join(root, profileId),
   };
 }
 
@@ -266,8 +270,6 @@ function acpArgs(profile: AntigravityProfileLocation): string[] {
     "--disable-telemetry",
     "--gemini-dir",
     profile.geminiDir,
-    "--app-data-dir",
-    profile.appDataDir,
   ];
 }
 
@@ -495,7 +497,7 @@ export class AntigravityClient implements AIProvider {
     const connection = await AcpConnection.start(args, {
       cwd: workDir,
       env: antigravityChildEnv(
-        join(this.options.profile.geminiDir, this.options.profile.appDataDir),
+        join(this.options.profile.geminiDir),
       ),
     });
     state.connection = connection;
@@ -627,7 +629,7 @@ export async function probeAntigravity(
   try {
     connection = await AcpConnection.start(acpArgs(profile), {
       cwd: workDir,
-      env: antigravityChildEnv(join(profile.geminiDir, profile.appDataDir)),
+      env: antigravityChildEnv(profile.geminiDir),
     });
     const init = resultOrThrow<AcpInitializeResult>(
       await connection.call("initialize", initializeParams(), SETUP_TIMEOUT_MS),
