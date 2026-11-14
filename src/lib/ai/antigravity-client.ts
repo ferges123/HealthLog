@@ -228,14 +228,29 @@ type AcpPromptBlock =
 
 // ─── Request helpers ─────────────────────────────────────────
 
-/** The environment every `agy` child runs with. Only allowlisted variables pass. */
-export function antigravityChildEnv(): NodeJS.ProcessEnv {
-  // The project's ProcessEnv type requires NODE_ENV. The allowlist fills the rest.
+/** The environment every `agy` child runs with. Only allowlisted variables pass.
+ * HOME is overridden to the user's profile directory so that agy's file-based
+ * token storage writes to the volume-mounted path instead of the container's
+ * ephemeral $HOME. Without this, the OAuth token disappears on every container
+ * recreate and the user must re-login.
+ */
+export function antigravityChildEnv(
+  profileDir: string,
+): NodeJS.ProcessEnv {
   const env = {} as NodeJS.ProcessEnv;
   for (const key of CHILD_ENV_ALLOWLIST) {
     const value = process.env[key];
     if (value !== undefined) env[key] = value;
   }
+  // Override $HOME so agy stores its token (and other home-relative files)
+  // under the per-user profile directory, which is volume-mounted and persists
+  // across container recreates. The XDG variables follow the same override so
+  // nothing leaks into the container's default home directory.
+  env.HOME = profileDir;
+  env.XDG_DATA_HOME = join(profileDir, ".local", "share");
+  env.XDG_CONFIG_HOME = join(profileDir, ".config");
+  env.XDG_CACHE_HOME = join(profileDir, ".cache");
+  env.XDG_STATE_HOME = join(profileDir, ".local", "state");
   return env;
 }
 
@@ -475,7 +490,9 @@ export class AntigravityClient implements AIProvider {
 
     const connection = await AcpConnection.start(args, {
       cwd: workDir,
-      env: antigravityChildEnv(),
+      env: antigravityChildEnv(
+        join(this.options.profile.geminiDir, this.options.profile.appDataDir),
+      ),
     });
     state.connection = connection;
     if (state.done) {
@@ -606,7 +623,7 @@ export async function probeAntigravity(
   try {
     connection = await AcpConnection.start(acpArgs(profile), {
       cwd: workDir,
-      env: antigravityChildEnv(),
+      env: antigravityChildEnv(join(profile.geminiDir, profile.appDataDir)),
     });
     const init = resultOrThrow<AcpInitializeResult>(
       await connection.call("initialize", initializeParams(), SETUP_TIMEOUT_MS),

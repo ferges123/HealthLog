@@ -89,7 +89,8 @@ export const POST = apiHandler(async () => {
         "The login must run on that host, because the profile folder lives there.",
         "",
         "1. Open a terminal on the HealthLog host (inside its container, for example with docker exec -it) and run:",
-        `   agy acp --login --gemini-dir ${profileRoot} --app-data-dir ${profileId}`,
+        `   HOME=${profileRoot}/${profileId} agy acp --login --gemini-dir ${profileRoot} --app-data-dir ${profileId}`,
+        "   (The HOME override stores the OAuth token inside the profile directory so it survives container restarts.)",
         "2. Open the printed link in a browser, sign in, then paste the code back into the terminal",
         "3. Back in HealthLog, run the connection test",
       ]

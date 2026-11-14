@@ -39,6 +39,21 @@ export function antigravityReasonOf(error: unknown): AntigravityFailureReason {
 }
 
 export class AntigravityError extends Error {
+  /**
+   * True when the error means the user's OAuth token is expired or missing.
+   * The provider-runner's `hopCause` reads this field to log
+   * `cause: "credential_expired"` instead of the generic `"network"`.
+   */
+  readonly credentialExpired: boolean;
+
+  /**
+   * A `ProviderFailureKind`-compatible tag so `providerFailureKind` in
+   * `failure-kind.ts` can classify this error without knowing the class.
+   * Values that match a known kind are used directly; others fall through to
+   * `"unknown"`.
+   */
+  readonly kind: string;
+
   constructor(
     message: string,
     public readonly code: string,
@@ -46,5 +61,10 @@ export class AntigravityError extends Error {
   ) {
     super(message);
     this.name = "AntigravityError";
+    this.credentialExpired = code === ANTIGRAVITY_ERRORS.AUTH_REQUIRED;
+    this.kind =
+      code === ANTIGRAVITY_ERRORS.TIMEOUT ? "timeout"
+      : code === ANTIGRAVITY_ERRORS.CANCELLED ? "aborted"
+      : "unknown";
   }
 }
