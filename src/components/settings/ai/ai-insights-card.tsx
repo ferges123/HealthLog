@@ -186,6 +186,14 @@ export function AiInsightsCard({
               provider={selectedProvider}
               insightsSettings={insightsSettings}
               userProvider={userProvider}
+              onProviderChanged={() => {
+                void queryClient.invalidateQueries({
+                  queryKey: queryKeys.insightsProviderChain(),
+                });
+                void queryClient.invalidateQueries({
+                  queryKey: queryKeys.userAiProvider(),
+                });
+              }}
             />
           </>
         )}
@@ -335,10 +343,12 @@ function ProviderConfigCard({
   provider,
   insightsSettings,
   userProvider,
+  onProviderChanged,
 }: {
   provider: ProviderType;
   insightsSettings: InsightsSettings | null | undefined;
   userProvider: UserAIProvider | null | undefined;
+  onProviderChanged: () => void;
 }) {
   return (
     <div className="space-y-4" data-slot="ai-provider-config">
@@ -360,7 +370,9 @@ function ProviderConfigCard({
       {provider === "admin-openai" && (
         <AdminOpenAIProviderForm hasAdminKey={insightsSettings?.hasAdminKey} />
       )}
-      {provider === "antigravity" && <AntigravityProviderForm />}
+      {provider === "antigravity" && (
+        <AntigravityProviderForm onProviderChanged={onProviderChanged} />
+      )}
     </div>
   );
 }

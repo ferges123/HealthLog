@@ -32,9 +32,13 @@ import {
 } from "./antigravity-status-rows";
 import { reasonText, useAntigravityProfile } from "./use-antigravity-profile";
 
-export function AntigravityProviderForm() {
+export function AntigravityProviderForm({
+  onProviderChanged,
+}: {
+  onProviderChanged?: () => void;
+}) {
   const { t } = useTranslations();
-  const profile = useAntigravityProfile();
+  const profile = useAntigravityProfile({ onProviderChanged });
   const {
     status,
     loading,
