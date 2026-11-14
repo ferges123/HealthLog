@@ -89,10 +89,14 @@ export class AcpConnection {
         ),
       ),
     );
-    child.on("exit", (code, signal) =>
+    // ⚠ Use stdout 'close' (not child 'exit') so the fail() runs only after
+    // the last stdout data has been flushed through onData. The 'exit' event
+    // can fire before the final stdout bytes are delivered, which would reject
+    // the pending session/prompt call before its response is read.
+    child.stdout?.on("close", () =>
       this.fail(
         new AntigravityError(
-          `agy exited (code ${code}, signal ${signal})`,
+          `agy stdout closed`,
           ANTIGRAVITY_ERRORS.PROCESS_ERROR,
         ),
       ),
