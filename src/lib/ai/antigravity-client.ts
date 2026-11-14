@@ -277,6 +277,11 @@ function initializeParams() {
   return {
     protocolVersion: PROTOCOL_VERSION,
     clientInfo: { name: "HealthLog", version: "1.0.0" },
+    // The server advertises systemPrompt.append: true in its initialize
+    // response. Sending systemPrompt here injects it into the model's
+    // actual system instructions (not just the conversation text), making
+    // it effective against cascade/planning mode.
+    systemPrompt: AGY_NO_TOOL_HINT,
   };
 }
 
@@ -307,6 +312,20 @@ function textOf(content: AiMessage["content"]): string {
  * Turn the request into ACP prompt blocks: one text block (system prompt
  * followed by the conversation), then one block per attached image or PDF.
  */
+
+/**
+ * Injected into every agy session via two channels:
+ *   1. The ACP `initialize` systemPrompt field (model's actual system prompt)
+ *   2. Prepended to every conversation text block (belt-and-suspenders)
+ *
+ * Without it the model enters cascade/agentic mode (jetski) and attempts to
+ * execute internal planning steps (Step_Generic). With --sandbox those steps
+ * are refused and the session returns empty content; without --sandbox the
+ * cascade runs indefinitely (jetski_mode_turbo, 3-min timeout).
+ */
+const AGY_NO_TOOL_HINT =
+  "You are a conversational assistant. Respond directly with plain text. Do not use any internal tools, planning steps, or execution steps. Provide your complete answer in a single text reply.";
+
 function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
   const { messages } = params;
   const single = messages.length === 1 && messages[0].role === "user";
@@ -315,7 +334,13 @@ function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
     : messages
         .map((m) => `${ROLE_LABEL[m.role]}: ${textOf(m.content)}`)
         .join("\n\n");
-  const text = [params.system, body].filter(Boolean).join("\n\n");
+  // Append the no-tool hint to the system prompt. It keeps the model from
+  // entering agentic mode; placing it in the system block ensures agy treats
+  // it as an instruction rather than part of the conversation.
+  const system = params.system
+    ? `${params.system}\n\n${AGY_NO_TOOL_HINT}`
+    : AGY_NO_TOOL_HINT;
+  const text = [system, body].filter(Boolean).join("\n\n");
 
   const blocks: AcpPromptBlock[] = [];
   if (text) blocks.push({ type: "text", text });
@@ -545,6 +570,8 @@ export class AntigravityClient implements AIProvider {
     const session = resultOrThrow<AcpSessionNewResult>(
       await connection.call(
         "session/new",
+        // agentScript: true was tested and had no effect — agy ignores it.
+        // The cascade is suppressed instead via systemPrompt in initializeParams.
         { cwd: workDir, mcpServers: [] },
         SETUP_TIMEOUT_MS,
       ),
@@ -571,6 +598,9 @@ export class AntigravityClient implements AIProvider {
       { sessionId: session.sessionId, prompt: blocks },
       timeoutMs,
     );
+    const stopReason = (response.result as AcpPromptResult | undefined)
+      ?.stopReason;
+    const content = chunks.join("");
     if (response.error) {
       const quota = /quota/i.test(response.error.message);
       throw new AntigravityError(
@@ -582,9 +612,6 @@ export class AntigravityClient implements AIProvider {
       );
     }
 
-    const stopReason = (response.result as AcpPromptResult | undefined)
-      ?.stopReason;
-    const content = chunks.join("");
     // A "cancelled" stop reason can appear when the CLI's sandbox rejects an
     // internal step (e.g. a Step_Generic from the agy backend), even though
     // the AI already emitted a complete text reply. Only treat it as an error

@@ -1351,7 +1351,6 @@ async function resolveProviderForTestUnbound(
   const stored = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      aiProvider: true,
       aiModel: true,
       aiBaseUrl: true,
       aiAnthropicKeyEncrypted: true,
@@ -1368,10 +1367,7 @@ async function resolveProviderForTestUnbound(
   // saved one: it belongs to the calling account.
   const owner = { operatorTrusted: isOperatorOwned(stored) };
 
-  const provider = (override.provider ?? stored?.aiProvider ?? "")
-    .toString()
-    .trim()
-    .toUpperCase();
+  const provider = (override.provider ?? "").trim().toUpperCase();
   const model = (override.model ?? stored?.aiModel ?? "").toString().trim();
   const baseUrl = (override.baseUrl ?? stored?.aiBaseUrl ?? "")
     .toString()
@@ -1385,6 +1381,16 @@ async function resolveProviderForTestUnbound(
   // no signal about whether overnight generation would work.
   // Nothing resolving is the route's `ai.provider.none`, not a refused entry.
   if (!provider) {
+    if (
+      Object.entries(override).some(
+        ([key, value]) => key !== "provider" && value?.trim(),
+      )
+    ) {
+      throw new AITestConfigError(
+        422,
+        "Select a provider to test these settings",
+      );
+    }
     const chain = await resolveProviderChain(userId);
     return chain.length > 0 ? chain[0].instance : new NoProvider();
   }

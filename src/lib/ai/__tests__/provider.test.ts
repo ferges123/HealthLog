@@ -321,12 +321,12 @@ describe("resolveProviderForTest — empty override resolves via the chain", () 
     // resolveProviderChain reads the chain row. The chain enables openai
     // and the user has an OpenAI key → first chain entry is OpenAIClient.
     vi.mocked(prisma.user.findUnique)
-      // 1st: resolveProviderForTest's own read
+      // 1st: a stale selection must not override the active chain.
       .mockResolvedValueOnce({
-        aiProvider: null,
+        aiProvider: "ANTHROPIC",
         aiModel: null,
         aiBaseUrl: null,
-        aiAnthropicKeyEncrypted: null,
+        aiAnthropicKeyEncrypted: "enc-anthropic",
         aiLocalKeyEncrypted: null,
         aiOpenaiKeyEncrypted: "enc-user-openai",
       } as never)
@@ -366,6 +366,24 @@ describe("resolveProviderForTest — empty override resolves via the chain", () 
 
     const provider = await resolveProviderForTest("user-123", {});
     expect(provider.type).toBe("none");
+  });
+
+  it("uses an explicitly selected provider", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({
+      aiProvider: "OPENAI",
+      aiAnthropicKeyEncrypted: "enc-anthropic",
+    } as never);
+    const provider = await resolveProviderForTest("user-123", {
+      provider: "ANTHROPIC",
+    });
+    expect(provider.type).toBe("anthropic");
+  });
+
+  it("rejects unsaved settings without an explicit provider", async () => {
+    vi.mocked(prisma.user.findUnique).mockResolvedValue({} as never);
+    await expect(
+      resolveProviderForTest("user-123", { model: "other" }),
+    ).rejects.toMatchObject({ name: "AITestConfigError", status: 422 });
   });
 });
 

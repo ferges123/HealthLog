@@ -298,6 +298,86 @@ describe("AntigravityClient", () => {
       expect(proc.kill).toHaveBeenCalled();
     });
   });
+  describe("tool suppression", () => {
+    it("appends the no-tool hint to the system prompt sent to agy", async () => {
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
+      await client.generateCompletion(
+        singleUserTurn({ system: "You are a coach.", user: "Cześć" }),
+      );
+      const msgs = sentMessages(mockProcess.proc.stdin.write);
+      const promptMsg = msgs.find((m) => m.method === "session/prompt");
+      expect(promptMsg).toBeDefined();
+      const blocks = (promptMsg?.params as { prompt?: unknown[] })?.prompt;
+      const textBlock = (
+        blocks as Array<{ type: string; text?: string }> | undefined
+      )?.find((b) => b.type === "text");
+      expect(textBlock?.text).toContain("You are a coach.");
+      expect(textBlock?.text).toContain(
+        "Do not use any internal tools, planning steps, or execution steps",
+      );
+    });
+    it("includes the hint even when no system prompt is provided", async () => {
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
+      await client.generateCompletion(singleUserTurn({ user: "Hi" }));
+      const msgs = sentMessages(mockProcess.proc.stdin.write);
+      const promptMsg = msgs.find((m) => m.method === "session/prompt");
+      const blocks = (promptMsg?.params as { prompt?: unknown[] })?.prompt;
+      const textBlock = (
+        blocks as Array<{ type: string; text?: string }> | undefined
+      )?.find((b) => b.type === "text");
+      expect(textBlock?.text).toContain(
+        "Do not use any internal tools, planning steps, or execution steps",
+      );
+    });
+    it("throws PROMPT_FAILED when agy returns end_turn with no content", async () => {
+      // Simulate the Step_Generic scenario: session/prompt returns end_turn
+      // with no preceding agent_message_chunk notifications.
+      const { proc, sendMessage } = createMockProcess();
+      (proc.stdin.write as ReturnType<typeof vi.fn>).mockImplementation(
+        (data: string) => {
+          const lines = data.split("\n").filter((l) => l.trim());
+          for (const line of lines) {
+            const msg = JSON.parse(line) as {
+              method?: string;
+              id?: number;
+              params?: unknown;
+            };
+            if (msg.method === "initialize") {
+              sendMessage({
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: {
+                  protocolVersion: 1,
+                  agentInfo: { name: "Mock ACP", version: "0.0.1" },
+                  agentCapabilities: {
+                    promptCapabilities: { image: true, embeddedContext: true },
+                  },
+                },
+              });
+            } else if (msg.method === "session/new") {
+              sendMessage({
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: { sessionId: "empty-session", configOptions: [] },
+              });
+            } else if (msg.method === "session/prompt") {
+              // No agent_message_chunk — only the completion signal
+              sendMessage({
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: { stopReason: "end_turn" },
+              });
+            }
+          }
+        },
+      );
+      mockSpawn.mockReturnValue(proc);
+      const client = new AntigravityClient({ profile: TEST_PROFILE });
+      await expect(
+        client.generateCompletion(singleUserTurn({ user: "Cześć" })),
+      ).rejects.toMatchObject({ code: ANTIGRAVITY_ERRORS.PROMPT_FAILED });
+    });
+  });
 });
 /** Every JSON-RPC message the client wrote to the child's stdin, in order. */
 function sentMessages(
