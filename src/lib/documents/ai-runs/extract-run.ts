@@ -31,6 +31,7 @@ import {
 } from "@/lib/documents/ai-route-support";
 import {
   planInboundReads,
+  planInboundTextReads,
   runInboundExtraction,
   type InboundExtractionResult,
   type InboundReadSource,
@@ -41,6 +42,10 @@ import {
   type OcrSchedule,
 } from "@/lib/documents/ocr-plan";
 import { OcrExtractError } from "@/lib/documents/ocr-read";
+import {
+  readPdfTextLayer,
+  textLayerText,
+} from "@/lib/documents/pdf-text-layer";
 import {
   decryptDocumentContent,
   encryptFactData,
@@ -349,41 +354,43 @@ export async function executeDocumentExtract(args: {
         action: { name: "documents.inbound.extractFailed" },
         meta: { reason: "antigravity_pdf_fallback", mode: input.mode },
       });
-      const fallbackSource: InboundReadSource = { ...source, pdfSupported: false };
-      const fallbackPlan = await planInboundReads(fallbackSource, schedule);
-      if (fallbackPlan.ok) {
-        await schedule.arm(
-          fallbackPlan.args.chunks.length * OCR_EXTRACT_MODEL_CALLS,
-        );
-        try {
-          result = await runInboundExtraction({
-            userId,
-            provider: pick.entry.instance,
-            providerType: pick.providerType,
-            ...fallbackPlan.args,
-            meter,
-            reserveRead,
-          });
-        } catch (fallbackErr) {
+      // pdfSupported:false would rasterise first; for PDFs with invisible text
+      // (3 Tr mode, custom Type1 encoding) rasterisation produces a blank image.
+      // Extract the text layer directly with pdf.js — same path summary-run uses.
+      const layerRead = await readPdfTextLayer(source.bytes, 50, "documents.extract");
+      if (layerRead.ok) {
+        const ocrText = textLayerText(layerRead.layer);
+        if (ocrText.trim()) {
+          const textPlan = { ok: true as const, ...planInboundTextReads(ocrText, schedule) };
+          await schedule.arm(textPlan.args.chunks.length * OCR_EXTRACT_MODEL_CALLS);
+          try {
+            result = await runInboundExtraction({
+              userId,
+              provider: pick.entry.instance,
+              providerType: pick.providerType,
+              ...textPlan.args,
+              meter,
+              reserveRead,
+            });
+          } catch (fallbackErr) {
+            await settle(false);
+            if (fallbackErr instanceof OcrExtractError)
+              return extractionFailure(fallbackErr);
+            annotate({
+              action: { name: "documents.inbound.extractFailed" },
+              meta: { reason: "provider_error", mode: input.mode },
+            });
+            return unreadableDocument(false);
+          }
+          // text-layer fallback succeeded — continue to settle(true) and staging
+        } else {
           await settle(false);
-          if (fallbackErr instanceof OcrExtractError)
-            return extractionFailure(fallbackErr);
-          annotate({
-            action: { name: "documents.inbound.extractFailed" },
-            meta: { reason: "provider_error", mode: input.mode },
-          });
           return unreadableDocument(false);
         }
-        // fallback succeeded — continue to settle(true) and staging below
       } else {
-        // text layer also unavailable
+        // PDF text layer unreadable or empty
         await settle(false);
-        await refundDocumentAiSlot(userId);
-        return fallbackPlan.reason === "busy"
-          ? readerBusyFailure()
-          : fallbackPlan.reason === "rendererUnavailable"
-            ? pdfRendererUnavailable()
-            : pdfRenderFailed();
+        return unreadableDocument(false);
       }
     } else {
       // Charged for the calls that were made, a failed read included.
