@@ -22,6 +22,7 @@
 import type { Buffer } from "node:buffer";
 
 import type { ProviderChainType } from "@/lib/ai/provider-chain";
+import { ANTIGRAVITY_ERRORS, AntigravityError } from "@/lib/ai/antigravity-errors";
 import { auditLog } from "@/lib/auth/audit";
 import { prisma } from "@/lib/db";
 import {
@@ -322,14 +323,69 @@ export async function executeDocumentExtract(args: {
       reserveRead,
     });
   } catch (err) {
-    // Charged for the calls that were made, a failed read included.
-    await settle(false);
-    if (err instanceof OcrExtractError) return extractionFailure(err);
-    annotate({
-      action: { name: "documents.inbound.extractFailed" },
-      meta: { reason: "provider_error", mode: input.mode },
-    });
-    return unreadableDocument(false);
+    // When Antigravity returns PROMPT_FAILED on a PDF document (Gemini returns
+    // empty because the PDF uses a custom font encoding that the native
+    // resource-block reader cannot decode), retry using the same text-layer
+    // path that pdfSupported: false providers (Codex) use: rebuild the plan
+    // with pdfSupported: false so planVisionReads falls through rasterisation
+    // to the text layer, then run the extraction again on the extracted text.
+    if (
+      err instanceof AntigravityError &&
+      err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED &&
+      source.mode === "vision" &&
+      source.mime === "application/pdf" &&
+      source.pdfSupported
+    ) {
+      annotate({
+        action: { name: "documents.inbound.extractFailed" },
+        meta: { reason: "antigravity_pdf_fallback", mode: input.mode },
+      });
+      const fallbackSource: InboundReadSource = { ...source, pdfSupported: false };
+      const fallbackPlan = await planInboundReads(fallbackSource, schedule);
+      if (fallbackPlan.ok) {
+        await schedule.arm(
+          fallbackPlan.args.chunks.length * OCR_EXTRACT_MODEL_CALLS,
+        );
+        try {
+          result = await runInboundExtraction({
+            userId,
+            provider: pick.entry.instance,
+            providerType: pick.providerType,
+            ...fallbackPlan.args,
+            meter,
+            reserveRead,
+          });
+        } catch (fallbackErr) {
+          await settle(false);
+          if (fallbackErr instanceof OcrExtractError)
+            return extractionFailure(fallbackErr);
+          annotate({
+            action: { name: "documents.inbound.extractFailed" },
+            meta: { reason: "provider_error", mode: input.mode },
+          });
+          return unreadableDocument(false);
+        }
+        // fallback succeeded — continue to settle(true) and staging below
+      } else {
+        // text layer also unavailable
+        await settle(false);
+        await refundDocumentAiSlot(userId);
+        return fallbackPlan.reason === "busy"
+          ? readerBusyFailure()
+          : fallbackPlan.reason === "rendererUnavailable"
+            ? pdfRendererUnavailable()
+            : pdfRenderFailed();
+      }
+    } else {
+      // Charged for the calls that were made, a failed read included.
+      await settle(false);
+      if (err instanceof OcrExtractError) return extractionFailure(err);
+      annotate({
+        action: { name: "documents.inbound.extractFailed" },
+        meta: { reason: "provider_error", mode: input.mode },
+      });
+      return unreadableDocument(false);
+    }
   }
   await settle(true);
   const incomplete = result.incomplete || plan.partial;
