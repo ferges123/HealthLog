@@ -322,9 +322,18 @@ function textOf(content: AiMessage["content"]): string {
  * execute internal planning steps (Step_Generic). With --sandbox those steps
  * are refused and the session returns empty content; without --sandbox the
  * cascade runs indefinitely (jetski_mode_turbo, 3-min timeout).
+ *
+ * The document clause prevents a second, PDF-specific trigger: when the prompt
+ * carries an ACP resource block the model sometimes tries to open the file with
+ * a filesystem tool. The resource content is already embedded in the message,
+ * so no tool is needed; saying so keeps the model out of agentic mode.
  */
 const AGY_NO_TOOL_HINT =
-  "You are a conversational assistant. Respond directly with plain text. Do not use any internal tools, planning steps, or execution steps. Provide your complete answer in a single text reply.";
+  "You are a conversational assistant. Respond directly with plain text. " +
+  "Do not use any internal tools, planning steps, or execution steps. " +
+  "If the message includes attached documents or files, their content is already " +
+  "fully embedded in this message — you can read them directly without using any tools. " +
+  "Provide your complete answer in a single text reply.";
 
 function buildPromptBlocks(params: CompletionParams): AcpPromptBlock[] {
   const { messages } = params;
