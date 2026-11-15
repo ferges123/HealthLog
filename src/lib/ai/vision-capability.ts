@@ -147,12 +147,16 @@ export function supportsVisionForConfig(
  *
  * Antigravity accepts a PDF only when the CLI reports
  * `agentCapabilities.promptCapabilities.embeddedContext` during ACP initialize.
- * This function returns true without that check. The client then refuses the
- * PDF with PROMPT_FAILED if the CLI does not report it. Nothing rasterizes the
- * PDF as a fallback.
+ * agy 1.5.8 advertises `promptCapabilities.embeddedContext: true` but its ACP
+ * server silently skips `application/pdf` blobs in resource blocks
+ * ("Skipping embedded resource ... unsupported blob type application/pdf").
+ * Gemini therefore receives no document content and returns a confused reply.
+ * Antigravity is intentionally excluded here so PDFs always go through the
+ * rasterisation → text-layer path (pdfSupported: false), which reliably
+ * delivers the page text regardless of font encoding.
  */
 export function supportsPdfForProvider(
   providerType: VisionProviderType,
 ): boolean {
-  return providerType === "anthropic" || providerType === "antigravity";
+  return providerType === "anthropic";
 }
