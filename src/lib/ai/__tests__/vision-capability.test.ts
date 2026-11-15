@@ -161,22 +161,11 @@ describe("supportsVisionForConfig", () => {
 });
 
 describe("supportsPdfForProvider", () => {
-  it("anthropic and antigravity support native PDF; others do not", () => {
+  it("only anthropic supports native PDF", () => {
     expect(supportsPdfForProvider("anthropic")).toBe(true);
-    expect(supportsPdfForProvider("antigravity")).toBe(true);
     expect(supportsPdfForProvider("openai")).toBe(false);
     expect(supportsPdfForProvider("admin-openai")).toBe(false);
     expect(supportsPdfForProvider("local")).toBe(false);
     expect(supportsPdfForProvider("codex")).toBe(false);
-  });
-
-  it("supportsVisionForConfig('antigravity', ...) is always false (static; real capability comes from DB)", () => {
-    // Static vision gate stays false for antigravity because the actual
-    // capability (embeddedContext) is a dynamic DB value, not a model string.
-    // The presence probe overrides this per-entry using antigravityCapabilitiesJson.
-    expect(supportsVisionForConfig("antigravity", null)).toBe(false);
-    expect(supportsVisionForConfig("antigravity", "gemini-3.8-flash")).toBe(
-      false,
-    );
   });
 });

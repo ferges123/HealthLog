@@ -1017,7 +1017,6 @@ const PRESENCE_USER_SELECT = {
   aiModel: true,
   antigravityProfileId: true,
   antigravityConnectionStatus: true,
-  antigravityCapabilitiesJson: true,
   codexConnectionStatus: true,
   codexAccessTokenEncrypted: true,
   codexRefreshTokenEncrypted: true,
@@ -1033,18 +1032,6 @@ const NO_PRESENCE: ProviderPresence = Object.freeze({
   managedBy: null,
   availableTypes: [],
 });
-
-/**
- * Whether the user's stored antigravity capabilities JSON reports
- * `promptCapabilities.embeddedContext: true`. This is the ACP capability
- * that covers embedded resources such as PDFs. The value is written by the
- * connection test (`/api/antigravity/test`) and cached in the DB row.
- */
-function antigravityEmbeddedContextEnabled(json: unknown): boolean {
-  if (!json || typeof json !== "object") return false;
-  const caps = json as { promptCapabilities?: { embeddedContext?: boolean } };
-  return caps.promptCapabilities?.embeddedContext === true;
-}
 
 /**
  * Whether one chain entry's model can read an image. Mirrors the model each
@@ -1105,10 +1092,7 @@ export function probeProviderChain(
       const adminModel = settings?.adminAiModel ?? null;
       const vision = (providerType: string): ProviderEntryPresence => ({
         providerType,
-        vision:
-          providerType === "antigravity"
-            ? antigravityEmbeddedContextEnabled(row.antigravityCapabilitiesJson)
-            : entryVision(providerType, recordId, row.aiModel, adminModel),
+        vision: entryVision(providerType, recordId, row.aiModel, adminModel),
       });
 
       if (policy === "deny") return NO_PRESENCE;
