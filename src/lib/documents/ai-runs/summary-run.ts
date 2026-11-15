@@ -12,7 +12,7 @@
  */
 import type { ProviderChainType } from "@/lib/ai/provider-chain";
 import type { OutboundReason } from "@/lib/ai/safety/outbound-screen";
-import { ANTIGRAVITY_ERRORS, AntigravityError } from "@/lib/ai/antigravity-errors";
+import { ANTIGRAVITY_ERRORS } from "@/lib/ai/antigravity-errors";
 import { auditLog } from "@/lib/auth/audit";
 import { prisma } from "@/lib/db";
 import {
@@ -236,8 +236,12 @@ export async function executeDocumentSummary(args: {
     // systems like LUX MED that embed text in `3 Tr` (invisible) mode with
     // custom Type1 encoding that pdfjs can decode but Gemini cannot.
     if (
-      err instanceof AntigravityError &&
-      err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED &&
+      (err as { name?: string }).name === "AntigravityError" &&
+      (
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.PROMPT_FAILED ||
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.TIMEOUT ||
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.PROCESS_ERROR
+      ) &&
       describeInput.documents &&
       describeInput.documents.length > 0
     ) {

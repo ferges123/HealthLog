@@ -22,7 +22,7 @@
 import type { Buffer } from "node:buffer";
 
 import type { ProviderChainType } from "@/lib/ai/provider-chain";
-import { ANTIGRAVITY_ERRORS, AntigravityError } from "@/lib/ai/antigravity-errors";
+import { ANTIGRAVITY_ERRORS } from "@/lib/ai/antigravity-errors";
 import { auditLog } from "@/lib/auth/audit";
 import { prisma } from "@/lib/db";
 import {
@@ -331,9 +331,16 @@ export async function executeDocumentExtract(args: {
     // falls through rasterisation to the text layer, then run the extraction
     // again on the extracted text.
     if (
-      err instanceof AntigravityError &&
-      (err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED ||
-        err.code === ANTIGRAVITY_ERRORS.TIMEOUT) &&
+      // Duck-type check instead of instanceof to survive module-boundary
+      // differences in the Next.js bundle (same pattern as failure-kind.ts).
+      (err as { name?: string }).name === "AntigravityError" &&
+      (
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.PROMPT_FAILED ||
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.TIMEOUT ||
+        // agy killed via SIGKILL (after our SIGTERM + 2 s grace) generates
+        // PROCESS_ERROR when stdout closes before the 120 s call-timer fires.
+        (err as { code?: string }).code === ANTIGRAVITY_ERRORS.PROCESS_ERROR
+      ) &&
       source.mode === "vision" &&
       source.mime === "application/pdf" &&
       source.pdfSupported
