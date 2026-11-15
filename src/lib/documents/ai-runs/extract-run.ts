@@ -348,7 +348,12 @@ export async function executeDocumentExtract(args: {
       ) &&
       source.mode === "vision" &&
       source.mime === "application/pdf" &&
-      source.pdfSupported
+      // Trigger for any agy+PDF call regardless of pdfSupported: with
+      // pdfSupported:true agy silently drops the blob; with pdfSupported:false
+      // the JPEG of an invisible-text PDF is blank. Both produce the same
+      // result: Gemini cannot read the content. Text layer is the only path
+      // that reliably works for PDFs with custom font encoding.
+      pick.providerType === "antigravity"
     ) {
       annotate({
         action: { name: "documents.inbound.extractFailed" },
