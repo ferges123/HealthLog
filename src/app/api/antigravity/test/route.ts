@@ -9,6 +9,7 @@ import { apiHandler, requireAuth } from "@/lib/api-handler";
 import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
+import { setAntigravityCapabilities } from "@/lib/ai/antigravity-capability-cache";
 import {
   antigravityProfileLocation,
   antigravityReasonOf,
@@ -71,6 +72,14 @@ export const POST = apiHandler(async () => {
         : Prisma.DbNull,
     },
   });
+
+  // Keep the in-process capabilities cache consistent so the vision resolver
+  // sees the new state immediately, without waiting for the next DB read.
+  // Mirrors how startCodexSignIn/forgetCodexSignIn keep Codex's slug live.
+  const capJson = result.capabilities
+    ? { promptCapabilities: result.capabilities }
+    : null;
+  setAntigravityCapabilities(caller.id, capJson);
 
   return apiSuccess(result);
 });

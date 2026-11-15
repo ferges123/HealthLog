@@ -12,6 +12,7 @@ import { OpenAIClient } from "./openai-client";
 import { AnthropicClient } from "./anthropic-client";
 import { LocalOpenAICompatibleClient } from "./local-client";
 import { antigravityAvailable } from "./antigravity-client";
+import { setAntigravityCapabilities } from "./antigravity-capability-cache";
 import {
   refreshDeviceTokens,
   codexReconnectRequired,
@@ -1017,6 +1018,7 @@ const PRESENCE_USER_SELECT = {
   aiModel: true,
   antigravityProfileId: true,
   antigravityConnectionStatus: true,
+  antigravityCapabilitiesJson: true,
   codexConnectionStatus: true,
   codexAccessTokenEncrypted: true,
   codexRefreshTokenEncrypted: true,
@@ -1087,6 +1089,10 @@ export function probeProviderChain(
         readOperatorRow(),
       ]);
       if (!row) return NO_PRESENCE;
+      // Populate the in-process capabilities cache so chainEntryReadsImages
+      // can answer for antigravity without an extra DB round-trip, mirroring
+      // how startCodexSignIn/forgetCodexSignIn keep Codex's working slug live.
+      setAntigravityCapabilities(recordId, row.antigravityCapabilitiesJson);
       const policy = providerCredentialPolicy(authority, row.managedProfileAt);
       const adminKey = !!settings?.adminAiKeyEncrypted;
       const adminModel = settings?.adminAiModel ?? null;

@@ -14,6 +14,7 @@ import { apiHandler, requireAuth } from "@/lib/api-handler";
 import { apiSuccess } from "@/lib/api-response";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
+import { forgetAntigravityCapabilities } from "@/lib/ai/antigravity-capability-cache";
 import { envValue } from "@/lib/env";
 import { join } from "path";
 
@@ -45,6 +46,9 @@ export const POST = apiHandler(async () => {
       antigravityCapabilitiesJson: Prisma.DbNull,
     },
   });
+
+  // Drop the in-process capabilities cache immediately, mirroring forgetCodexSignIn.
+  forgetAntigravityCapabilities(userId);
 
   const profileRoot = envValue("ANTIGRAVITY_PROFILE_ROOT");
   const folder =

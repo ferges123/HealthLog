@@ -125,8 +125,13 @@ export function supportsVisionForConfig(
     case "admin-codex":
       return model ? openAIFamilySupportsVision(model) : false;
     case "antigravity":
-      // Off until a route sends images to Antigravity. The client checks the
-      // CLI's promptCapabilities.image before it sends one.
+      // Antigravity's rich-media support is dynamic: the CLI reports what it
+      // accepts via `agentCapabilities.promptCapabilities` during the ACP
+      // `initialize` handshake, and the connection test persists that in the
+      // database. The in-process cache (antigravity-capability-cache.ts) is
+      // the read path; `chainEntryReadsImages` checks it for the `antigravity`
+      // case rather than delegating here. This static function therefore stays
+      // false and is not the source of truth for Antigravity.
       return false;
     case "none":
     default:
