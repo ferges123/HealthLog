@@ -323,15 +323,17 @@ export async function executeDocumentExtract(args: {
       reserveRead,
     });
   } catch (err) {
-    // When Antigravity returns PROMPT_FAILED on a PDF document (Gemini returns
-    // empty because the PDF uses a custom font encoding that the native
-    // resource-block reader cannot decode), retry using the same text-layer
-    // path that pdfSupported: false providers (Codex) use: rebuild the plan
-    // with pdfSupported: false so planVisionReads falls through rasterisation
-    // to the text layer, then run the extraction again on the extracted text.
+    // When Antigravity returns PROMPT_FAILED or TIMEOUT on a PDF document
+    // (Gemini returns empty or times out because the PDF uses a custom font
+    // encoding that the native resource-block reader cannot decode), retry
+    // using the same text-layer path that pdfSupported: false providers
+    // (Codex) use: rebuild the plan with pdfSupported: false so planVisionReads
+    // falls through rasterisation to the text layer, then run the extraction
+    // again on the extracted text.
     if (
       err instanceof AntigravityError &&
-      err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED &&
+      (err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED ||
+        err.code === ANTIGRAVITY_ERRORS.TIMEOUT) &&
       source.mode === "vision" &&
       source.mime === "application/pdf" &&
       source.pdfSupported
