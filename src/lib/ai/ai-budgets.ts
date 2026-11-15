@@ -231,7 +231,7 @@ export const AI_BUDGETS = {
    * diagnosis. 600 tokens covers 2-4 sentences plus headroom; a touch of
    * temperature for readable prose without drift.
    */
-  documentSummary: { temperature: 0.3, maxTokens: 600 },
+  documentSummary: { temperature: 0.3, maxTokens: 600, timeoutMs: 120_000 },
 
   /**
    * v1.27.22 — raw verbatim transcription of a document's text. Feeds the

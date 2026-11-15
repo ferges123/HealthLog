@@ -468,6 +468,12 @@ export class AntigravityClient implements AIProvider {
   readonly type: ProviderType = "antigravity";
   /** ACP tools are the agent's own tools, not HealthLog function calling. */
   readonly supportsTools = false;
+  /**
+   * Stamped by `bindResponseTimeout` from the user's
+   * `User.aiResponseTimeoutSeconds` setting. Null means use the client's own
+   * `options.timeoutMs` or `DEFAULT_PROMPT_TIMEOUT_MS`.
+   */
+  responseTimeoutSeconds: number | null = null;
 
   constructor(private readonly options: AntigravityClientOptions) {}
 
@@ -603,7 +609,12 @@ export class AntigravityClient implements AIProvider {
     }
 
     const timeoutMs =
-      params.timeoutMs ?? this.options.timeoutMs ?? DEFAULT_PROMPT_TIMEOUT_MS;
+      params.timeoutMs ??
+      (this.responseTimeoutSeconds != null
+        ? this.responseTimeoutSeconds * 1_000
+        : undefined) ??
+      this.options.timeoutMs ??
+      DEFAULT_PROMPT_TIMEOUT_MS;
     const response = await connection.call(
       "session/prompt",
       { sessionId: session.sessionId, prompt: blocks },
