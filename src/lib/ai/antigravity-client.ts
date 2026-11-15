@@ -532,6 +532,8 @@ export class AntigravityClient implements AIProvider {
       throw cancelledError();
     }
 
+    // Register the chunk handler before any call() so no session/update
+    // notification can arrive on the wire before the callback is in place.
     const chunks: string[] = [];
     connection.onSessionUpdate = (update) => {
       if (

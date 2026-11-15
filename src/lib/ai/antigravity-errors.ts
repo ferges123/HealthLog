@@ -47,6 +47,12 @@ export class AntigravityError extends Error {
   readonly credentialExpired: boolean;
 
   /**
+   * True when the requested model is not in the CLI's current session.
+   * `hopCause` reads this field to log `cause: "model_not_served"`.
+   */
+  readonly modelNotServed: boolean;
+
+  /**
    * A `ProviderFailureKind`-compatible tag so `providerFailureKind` in
    * `failure-kind.ts` can classify this error without knowing the class.
    * Values that match a known kind are used directly; others fall through to
@@ -62,9 +68,11 @@ export class AntigravityError extends Error {
     super(message);
     this.name = "AntigravityError";
     this.credentialExpired = code === ANTIGRAVITY_ERRORS.AUTH_REQUIRED;
+    this.modelNotServed = code === ANTIGRAVITY_ERRORS.MODEL_UNAVAILABLE;
     this.kind =
       code === ANTIGRAVITY_ERRORS.TIMEOUT ? "timeout"
       : code === ANTIGRAVITY_ERRORS.CANCELLED ? "aborted"
+      : code === ANTIGRAVITY_ERRORS.PROMPT_FAILED ? "empty_response"
       : "unknown";
   }
 }

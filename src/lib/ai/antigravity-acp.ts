@@ -61,6 +61,14 @@ export class AcpConnection {
   private readonly pending = new Map<number | string, PendingCall>();
 
   /**
+   * Number of times the agent has asked for a permission we refused. After
+   * MAX_PERMISSION_REFUSALS the session is killed so we don't block for the
+   * full prompt timeout while agy retries the same rejected step.
+   */
+  private permissionRefusals = 0;
+  private static readonly MAX_PERMISSION_REFUSALS = 3;
+
+  /**
    * Set as soon as we know no new outgoing calls should be accepted: a stdin
    * write error, an explicit close(), or a fatal process error. Setting this
    * does NOT immediately reject in-flight pending calls — stdout may still
@@ -300,16 +308,33 @@ export class AcpConnection {
     params: unknown,
   ): void {
     if (method === "session/request_permission") {
-      // HealthLog grants no permissions. Choose a reject-once option when the
-      // agent offers one. Otherwise answer "cancelled".
+      // HealthLog grants no permissions. Prefer a permanent-reject option
+      // (reject_all / never_allow) when the agent offers one, then fall back
+      // to reject_once. If neither is available, answer "cancelled" — but
+      // count every refusal so we can bail out before agy loops for the full
+      // prompt timeout retrying the same refused step.
       const options =
         (params as { options?: AcpPermissionOption[] } | undefined)?.options ??
         [];
-      const reject = options.find((o) => o.kind === "reject_once");
-      const outcome = reject
-        ? { outcome: "selected", optionId: reject.optionId }
+      const permanentReject = options.find(
+        (o) => o.kind === "reject_all" || o.kind === "never_allow",
+      );
+      const rejectOnce = options.find((o) => o.kind === "reject_once");
+      const chosen = permanentReject ?? rejectOnce;
+      const outcome = chosen
+        ? { outcome: "selected", optionId: chosen.optionId }
         : { outcome: "cancelled" };
       this.write({ jsonrpc: "2.0", id, result: { outcome } });
+
+      this.permissionRefusals += 1;
+      if (this.permissionRefusals >= AcpConnection.MAX_PERMISSION_REFUSALS) {
+        this.failAll(
+          new AntigravityError(
+            "agy exceeded permission refusal limit",
+            ANTIGRAVITY_ERRORS.PROMPT_FAILED,
+          ),
+        );
+      }
       return;
     }
     this.write({
