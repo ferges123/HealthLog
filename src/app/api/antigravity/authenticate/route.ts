@@ -67,6 +67,21 @@ export const POST = apiHandler(async () => {
         console.error("Failed to create Antigravity profile directory:", error);
       }
     }
+    // agy 1.5.8+ stores the OAuth token at
+    // {XDG_CONFIG_HOME}/antigravity/plugin-secrets.json.
+    // antigravityChildEnv sets XDG_CONFIG_HOME = {profileDir}/.config, so the
+    // directory must exist before the user runs `agy acp --login`; otherwise
+    // agy cannot write the token and every session/new call returns
+    // AUTH_REQUIRED. Create the full chain at profile-setup time so it is
+    // ready when the login command runs.
+    const xdgConfigDir = join(profileDir, ".config", "antigravity");
+    if (!existsSync(xdgConfigDir)) {
+      try {
+        mkdirSync(xdgConfigDir, { recursive: true, mode: 0o700 });
+      } catch (error) {
+        console.error("Failed to create Antigravity XDG config directory:", error);
+      }
+    }
   }
 
   await prisma.user.update({

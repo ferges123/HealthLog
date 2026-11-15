@@ -12,6 +12,7 @@
  */
 import type { ProviderChainType } from "@/lib/ai/provider-chain";
 import type { OutboundReason } from "@/lib/ai/safety/outbound-screen";
+import { ANTIGRAVITY_ERRORS, AntigravityError } from "@/lib/ai/antigravity-errors";
 import { auditLog } from "@/lib/auth/audit";
 import { prisma } from "@/lib/db";
 import {
@@ -26,7 +27,11 @@ import {
   transcribeDocument,
   type DescribeInput,
 } from "@/lib/documents/describe";
-import { encryptDocumentSummary } from "@/lib/documents/store";
+import { encryptDocumentSummary, decryptDocumentContent } from "@/lib/documents/store";
+import {
+  readPdfTextLayer,
+  textLayerText,
+} from "@/lib/documents/pdf-text-layer";
 import { providerInputOf } from "@/lib/documents/vision-input";
 import type { Locale } from "@/lib/i18n/config";
 import { annotate } from "@/lib/logging/context";
@@ -224,6 +229,70 @@ export async function executeDocumentSummary(args: {
       };
     }
   } catch (err) {
+    // When an Antigravity PROMPT_FAILED error arrives on a PDF document
+    // (Gemini returns empty because the PDF uses a non-standard font encoding
+    // that makes the text invisible to the native resource-block reader), fall
+    // back to the PDF's server-side text layer. This covers lab results from
+    // systems like LUX MED that embed text in `3 Tr` (invisible) mode with
+    // custom Type1 encoding that pdfjs can decode but Gemini cannot.
+    if (
+      err instanceof AntigravityError &&
+      err.code === ANTIGRAVITY_ERRORS.PROMPT_FAILED &&
+      describeInput.documents &&
+      describeInput.documents.length > 0
+    ) {
+      annotate({
+        action: { name: "documents.summary.antigravity_pdf_fallback" },
+        meta: { mode: input.mode },
+      });
+      try {
+        const pdfBytes = decryptDocumentContent(
+          document.contentEncrypted,
+          document.contentCodec,
+        );
+        const layerRead = await readPdfTextLayer(pdfBytes, 50, "documents.summary");
+        if (layerRead.ok) {
+          const ocrText = textLayerText(layerRead.layer);
+          if (ocrText.trim()) {
+            const textDescribeInput: DescribeInput = {
+              provider: describeInput.provider,
+              providerType: describeInput.providerType,
+              ocrText,
+            };
+            if (output === "text") {
+              result = await transcribeDocument(textDescribeInput);
+            } else {
+              const { summary, blocked } = await runDocumentSummary({
+                ...textDescribeInput,
+                locale,
+              });
+              const persistence = args.persist
+                ? await persistSummary(userId, document.id, args.persist, summary, blocked)
+                : undefined;
+              result = {
+                summary: blocked ? documentSummaryBlockedCopy(locale) : summary,
+                ...(persistence ? { persistence } : {}),
+              };
+            }
+            await settleAiRunBudget(userId, budget, budget.reserved, servedBy);
+            await auditLog("documents.inbound.summary", {
+              userId,
+              ...(origin.worker ? { actorUserId: userId } : {}),
+              ipAddress: origin.ipAddress,
+              details: { documentId: document.id, mode: output, inputMode: "text" },
+            });
+            annotate({
+              action: { name: "documents.summary.serve" },
+              meta: { documentId: document.id, mode: output, inputMode: "text-layer-fallback" },
+            });
+            return { ok: true, data: result };
+          }
+        }
+      } catch {
+        // text-layer fallback also failed — fall through to the standard error path
+      }
+    }
+
     await settleAiRunBudget(userId, budget, 0, null);
     if (!(err instanceof DocumentDescribeError)) {
       annotate({
